@@ -1,0 +1,17 @@
+datasets:
+  pubLayNet:
+    type: public
+    path: data/public/pubLayNet
+    note: "Add download/mirror in src/ingest/download_pubLayNet()"
+  docLayNet:
+    type: public
+    path: data/public/docLayNet
+  icdar_mlt:
+    type: public
+    path: data/public/icdar_mlt
+  hi_ocr:
+    type: public
+    path: data/public/hi_ocr
+  challenge_train_set:
+    type: private
+    path: data/challenge/train_set

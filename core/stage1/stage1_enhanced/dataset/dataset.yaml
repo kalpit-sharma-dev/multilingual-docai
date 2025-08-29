@@ -1,0 +1,12 @@
+names:
+- Background
+- Text
+- Title
+- List
+- Table
+- Figure
+nc: 6
+path: D:\IIT\docai\outputs\stage1_enhanced\dataset
+test: test/images
+train: train/images
+val: val/images

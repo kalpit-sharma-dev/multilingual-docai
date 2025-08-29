@@ -1,0 +1,74 @@
+# PS-05 Configuration for GPU Training (RTX 2070)
+system:
+  target_languages: ['en', 'hi', 'ur', 'ar', 'ne', 'fa']
+  gpu_enabled: true
+  device: 'cuda:0'
+
+models:
+  layout:
+    classes: ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
+    confidence_threshold: 0.5
+    nms_threshold: 0.45
+    input_size: [640, 640]
+    backbone: 'yolov8x'
+    gpu_memory_optimization: true
+
+  ocr:
+    engine: 'easyocr'
+    languages: ['en', 'hi', 'ur', 'ar', 'ne', 'fa']
+    gpu: true
+    paragraph: false
+
+  langid:
+    confidence_threshold: 0.7
+    method: 'ensemble'
+
+training:
+  epochs: 100
+  batch_size: 4  # Optimized for RTX 2070 8GB memory
+  learning_rate: 0.001
+  optimizer: 'Adam'
+  scheduler: 'CosineAnnealingLR'
+  warmup_epochs: 5
+  gpu_memory_fraction: 0.9
+  
+  # Data augmentation
+  augmentation:
+    enabled: true
+    rotation: 15
+    brightness: 0.2
+    contrast: 0.2
+    noise: 0.1
+    blur: 0.1
+
+preprocessing:
+  deskew:
+    enabled: true
+    max_angle: 15.0
+    method: 'auto'
+  
+  denoise:
+    enabled: true
+    method: 'bilateral'
+    strength: 'medium'
+  
+  resize:
+    max_width: 2480
+    max_height: 3508
+    preserve_aspect: true
+  
+  normalization:
+    enabled: true
+    method: 'clahe'
+    target_range: [0, 255]
+
+evaluation:
+  iou_threshold: 0.5
+  confidence_threshold: 0.5
+  metrics: ['mAP', 'precision', 'recall', 'f1']
+
+output:
+  format: 'json'
+  include_confidence: true
+  include_bbox: true
+  include_class: true 

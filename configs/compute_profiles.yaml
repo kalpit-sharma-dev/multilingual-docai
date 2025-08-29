@@ -1,0 +1,17 @@
+profiles:
+  small_gpu:
+    device: cuda:0
+    layout_batch_size: 4
+    line_batch_size: 8
+    recog_batch_size: 4
+    num_workers: 4
+    amp: true
+    max_image_side: 1600
+  multi_gpu:
+    device: cuda
+    layout_batch_size: 16
+    line_batch_size: 32
+    recog_batch_size: 16
+    num_workers: 12
+    amp: true
+    max_image_side: 2400

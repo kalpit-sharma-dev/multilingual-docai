@@ -1,0 +1,338 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+ps05_env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application specific
+database/workflows.db
+database/workflows.db-*
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Development artifacts
+*.log
+*.tmp
+temp/
+tmp/
+.cache/
+
+# Documentation artifacts (generated)
+workflow-documentation.html
+
+# Test files
+test_*.json
+*_test.json
+
+# Backup files
+*.bak
+*.backup
+
+# Workflow backup directories (created during renaming)
+workflow_backups/
+
+# Database files (SQLite)
+*.db
+*.sqlite
+*.sqlite3
+
+# Rename logs
+workflow_rename_log.json
+
+# Node.js artifacts (if using npm)
+node_modules/
+package-lock.json
+
+#db
+*.db-shm
+*.db-wal
+
+# versions
+.python-version
+
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# OSX
+.DS_Store
+
+# Xcode
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+project.xcworkspace
+
+# Android/IntelliJ
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.keystore
+!debug.keystore
+
+# node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Bundle artifacts
+*.jsbundle
+
+# CocoaPods
+/ios/Pods/
+
+# Temporary files created by Metro to check the health of the file watcher
+.metro-health-check*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+coverage/
+
+# Production build
+build/
+dist/
+
+data/processed/
+data/train/
+data/test/
+data/val/
+data/
+
+# Image files - Fixed syntax (removed leading dots)
+*.png
+*.jpeg
+*.jpg
+*.gif
+*.webp
+*.svg
+*.ico
+*.bmp
+*.tiff
+
+# MODEL FILES - Large files that should not be in Git
+# PyTorch model files
+*.pt
+*.pth
+*.ckpt
+
+# TensorFlow model files
+*.pb
+*.h5
+*.keras
+
+# ONNX model files
+*.onnx
+
+# Large model directories
+models/
+model_weights/
+checkpoints/
+pretrained/
+
+# Specific large model files mentioned in error
+yolov8x.pt
+models/easyocr/craft_mlt_25k.pth
+
+# Python cache and compiled files
+*.pyc
+__pycache__/
+.pytest_cache/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Dataset files (often large)
+*.csv
+*.parquet
+*.h5
+*.hdf5
+*.npy
+*.npz
+
+# Video and audio files
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+*.mp3
+*.wav
+*.flac
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Log files
+*.log
+logs/
+
+# PDF files (often large documents)
+*.pdf
+
+# Large text files
+*.txt
+!requirements.txt
+!README.txt
+
+# Backup and temporary files
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# System files
+.directory
+desktop.ini
+
+# Documentation build artifacts
+docs/_build/
+docs/build/
+site/
+
+# Virtual environment directories
+venv*/
+.venv*/
+env*/
+.env*/
+
+# Configuration files with secrets
+config.ini
+settings.json
+.config
+
+# Output directories
+output/
+outputs/
+results/
+demo_output/
+
+# Test output files
+test_output/
+test_results/
+
+# Cache directories
+.cache/
+cache/
+.mypy_cache/
+.ruff_cache/
+
+# Profiling output
+*.prof
+*.lprof
+
+# IDE and editor files
+*.sublime-*
+.vimrc
+.nvimrc
+
+yolov8x.pt
+
