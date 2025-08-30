@@ -179,3 +179,12 @@ python scripts/run_stages.py --help
 ```
 
 **This will show you all available options and examples!**
+
+---
+
+## 📓 Evaluation Day (A100 GPU, Docker)
+
+See the detailed runbook:
+```
+docs/EVALUATION_DAY_RUNBOOK.md
+```

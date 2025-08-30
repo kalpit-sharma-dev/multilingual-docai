@@ -79,6 +79,11 @@ services:
       - ./logs:/app/logs
       - ./backend:/app/backend
       - ./scripts:/app/scripts
+      # Example: mount a specific evaluation dataset (read-only)
+      # - /data/ps05_eval/<DATASET_ID>/images:/app/data/api_datasets/<DATASET_ID>/images:ro
+      # Example: persist API-managed datasets/results on host (optional)
+      # - /data/ps05_api_datasets:/app/data/api_datasets
+      # - /data/ps05_results:/app/data/api_results
     deploy:
       resources:
         reservations:
