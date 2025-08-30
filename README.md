@@ -9,6 +9,7 @@ Complete 3-stage document understanding pipeline optimized for **A100 GPU** with
 ## 📓 Start here (Canonical Docs)
 - Main guide: this `README.md` (setup, run, API, troubleshooting)
 - Evaluation-day runbook: `docs/EVALUATION_DAY_RUNBOOK.md`
+- Stage-wise training: `docs/STAGE_TRAINING_GUIDE.md`
 - Swagger UI (runtime): http://localhost:8000/docs
 - GPU deployment (compose): `docker-compose.gpu.yml`
 
