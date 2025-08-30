@@ -23,6 +23,7 @@ import logging
 from dataclasses import dataclass
 from ultralytics import YOLO
 from transformers import LayoutLMv3Processor, LayoutLMv3ForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import easyocr
 import fasttext
 from PIL import Image
@@ -129,6 +130,31 @@ class OptimizedProcessingService:
                 models['blip2'].to(self.device)
             
             logger.info("All models loaded successfully!")
+
+            # Optional specialized captioner for charts (Pix2Struct)
+            try:
+                chart_ckpt = os.environ.get("CHART_CAPTION_CHECKPOINT", "")
+                if chart_ckpt:
+                    from transformers import Pix2StructProcessor, Pix2StructForConditionalGeneration
+                    models['chart_processor'] = Pix2StructProcessor.from_pretrained(chart_ckpt)
+                    models['chart_model'] = Pix2StructForConditionalGeneration.from_pretrained(chart_ckpt)
+                    if self.device == "cuda":
+                        models['chart_model'].to(self.device)
+                    logger.info(f"Chart captioning enabled: {chart_ckpt}")
+            except Exception as e:
+                logger.warning(f"Chart captioner not enabled: {e}")
+
+            # Optional table-to-text using seq2seq LM on OCR text context
+            try:
+                table_ckpt = os.environ.get("TABLE_T2T_CHECKPOINT", "")
+                if table_ckpt:
+                    models['table_tokenizer'] = AutoTokenizer.from_pretrained(table_ckpt)
+                    models['table_model'] = AutoModelForSeq2SeqLM.from_pretrained(table_ckpt)
+                    if self.device == "cuda":
+                        models['table_model'].to(self.device)
+                    logger.info(f"Table-to-text enabled: {table_ckpt}")
+            except Exception as e:
+                logger.warning(f"Table-to-text not enabled: {e}")
             
         except Exception as e:
             logger.error(f"Error loading models: {e}")
@@ -167,6 +193,53 @@ class OptimizedProcessingService:
         except Exception as e:
             logger.warning(f"Caption generation failed: {e}")
             return ""
+
+    def _caption_chart_from_pil(self, pil_image: Image.Image) -> str:
+        """Caption charts using Pix2Struct if available; fallback to BLIP-2."""
+        if self.models.get('chart_model') and self.models.get('chart_processor'):
+            try:
+                processor = self.models['chart_processor']
+                model = self.models['chart_model']
+                inputs = processor(images=pil_image, text="Generate a detailed chart description.", return_tensors="pt")
+                if self.device == 'cuda':
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                with torch.no_grad():
+                    output_ids = model.generate(**inputs, max_new_tokens=128)
+                return processor.decode(output_ids[0], skip_special_tokens=True)
+            except Exception as e:
+                logger.warning(f"Pix2Struct caption failed, fallback to BLIP-2: {e}")
+        return self._caption_from_pil(pil_image)
+
+    def _table_to_text(self, table_text: str) -> str:
+        """Summarize table OCR text using seq2seq if available; fallback to BLIP-2 will be used on image crop elsewhere."""
+        if not table_text.strip():
+            return ""
+        if self.models.get('table_model') and self.models.get('table_tokenizer'):
+            try:
+                tokenizer = self.models['table_tokenizer']
+                model = self.models['table_model']
+                prompt = f"summarize table: {table_text}"
+                inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+                if self.device == 'cuda':
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                with torch.no_grad():
+                    output_ids = model.generate(**inputs, max_new_tokens=128)
+                return tokenizer.decode(output_ids[0], skip_special_tokens=True)
+            except Exception as e:
+                logger.warning(f"Table T2T generation failed: {e}")
+        return ""
+
+    def _collect_text_in_region(self, region_xyhw: List[int], text_elements: List[Dict[str, Any]]) -> str:
+        """Collect OCR text within a region bbox [x,y,h,w] and concatenate in reading order."""
+        x, y, h, w = region_xyhw
+        lines = []
+        for te in text_elements:
+            bx = te.get('bbox', [0, 0, 0, 0])
+            tx, ty, th, tw = bx
+            if tx >= x and ty >= y and tx + tw <= x + w and ty + th <= y + h:
+                if te.get('text'):
+                    lines.append(te['text'])
+        return ' '.join(lines[:200])  # cap to avoid overly long prompts
 
     def _sort_text_elements_reading_order(self, text_elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Sort text elements in reading order (top-to-bottom, then left-to-right)."""
@@ -573,7 +646,16 @@ class OptimizedProcessingService:
                             crop = base_image[y:y+h, x:x+w]
                             if crop is not None and crop.size > 0:
                                 pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-                                desc = self._caption_from_pil(pil_crop)
+                                # Specialized paths
+                                desc = ""
+                                if el.get("type") == "Table":
+                                    table_text = self._collect_text_in_region(el["bbox"], stage2_text)
+                                    desc = self._table_to_text(table_text)
+                                    if not desc:
+                                        desc = self._caption_from_pil(pil_crop)
+                                else:
+                                    # Figure (charts/maps/images): try Pix2Struct then BLIP-2
+                                    desc = self._caption_chart_from_pil(pil_crop)
                                 if desc:
                                     el["description"] = desc
         except Exception as e:

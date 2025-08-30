@@ -13,6 +13,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV TRANSFORMERS_CACHE=/app/models
 ENV HF_HOME=/app/models
 ENV MPLCONFIGDIR=/tmp
+ENV HF_HUB_OFFLINE=0
+ENV TRANSFORMERS_OFFLINE=0
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -109,6 +111,8 @@ COPY ps05.py ./
 
 # Create necessary directories
 RUN mkdir -p datasets results logs models
+## Include pre-fetched models in the image if present at build time
+COPY models/ ./models/
 
 # Set permissions
 RUN chmod +x ps05.py

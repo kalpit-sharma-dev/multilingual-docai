@@ -3,7 +3,7 @@
 ## 1) Prerequisites (host machine)
 - NVIDIA drivers installed and NVIDIA Container Toolkit configured
 - Docker installed and able to run `--gpus all`
-- Outbound internet (or pre-populated `models/` volume) for first-run model downloads
+- No outbound internet required if models are preloaded
 - A large, fast disk for dataset and results (20GB+ dataset)
 
 ## 2) Prepare dataset on host
@@ -20,16 +20,24 @@
     done
     ```
 
-## 3) Build GPU image
+## 3) Build GPU image (offline-ready)
 ```bash
 cd /path/to/multilingual-docai
 docker build --build-arg INSTALL_GPU_DEPS=1 -t ps05-backend:gpu .
 ```
 
-## 4) Run container with volumes (recommended)
+Optional: embed models into the image (offline)
+- Place all required models in `./models` before build (YOLOv8 weights, LayoutLMv3, BLIP‑2, Pix2Struct, T2T‑Gen, fastText `lid.176.bin`).
+- The Dockerfile copies `models/` into `/app/models` so the container does not need the internet.
+
+## 4) Run container with volumes (offline)
 ```bash
 docker run -d --rm --name ps05-backend-gpu -p 8000:8000 --gpus all \
   -e TRANSFORMERS_CACHE=/app/models -e HF_HOME=/app/models -e MPLCONFIGDIR=/tmp \
+  # Optional specialized models (mount and set if available)
+  -e LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class \
+  -e CHART_CAPTION_CHECKPOINT=/app/models/pix2struct-chart \
+  -e TABLE_T2T_CHECKPOINT=/app/models/table-t2t \
   -v /data/ps05_eval/<DATASET_ID>/images:/app/data/api_datasets/<DATASET_ID>/images:ro \
   -v /data/ps05_results:/app/data/api_results \
   -v /data/ps05_models:/app/models \
@@ -56,6 +64,19 @@ curl -X POST http://localhost:8000/process-all \
   -F "gpu_acceleration=true" \
   -F "batch_size=50" \
   -F "optimization_level=speed"
+```
+
+Notes on outputs:
+- Bounding boxes are standardized to `[x, y, h, w]` (HBB).
+- Per-element captions are generated for Table/Figure; charts/maps under Figure use a chart model if provided, else BLIP-2.
+
+## 7) Offline image save/load
+```bash
+# On your build machine (with models included)
+docker save -o ps05-backend-gpu-offline.tar ps05-backend:gpu
+
+# At the venue (no internet)
+docker load -i ps05-backend-gpu-offline.tar
 ```
 
 - Single stage (1, 2, or 3):

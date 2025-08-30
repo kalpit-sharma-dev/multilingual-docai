@@ -60,6 +60,10 @@ export HF_HOME=/app/models
 ```bash
 docker run -d --rm --name ps05-backend-gpu -p 8000:8000 --gpus all \
   -e TRANSFORMERS_CACHE=/app/models -e HF_HOME=/app/models -e MPLCONFIGDIR=/tmp \
+  # Optional specialized models
+  -e LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class \
+  -e CHART_CAPTION_CHECKPOINT=/app/models/pix2struct-chart \
+  -e TABLE_T2T_CHECKPOINT=/app/models/table-t2t \
   -v /data/ps05_models:/app/models \
   -v /data/ps05_eval/EVAL_2025/images:/app/data/api_datasets/EVAL_2025/images:ro \
   -v /data/ps05_results:/app/data/api_results \
@@ -77,6 +81,8 @@ curl -X POST http://localhost:8000/process-all \
 ## 8) Tips for DocLayNet
 - Ensure correct class mapping for Stage 1 (6 classes: Background, Text, Title, List, Table, Figure)
 - Verify annotation conversion in `prepare_dataset.py` fits your source annotations; adjust mapping if needed.
+- If you fine-tune LayoutLMv3 for 6-class refinement, set `LAYOUTLMV3_CHECKPOINT` and mount the weights.
+- For higher table/chart scores, enable `TABLE_T2T_CHECKPOINT` and `CHART_CAPTION_CHECKPOINT` and mount the models.
 
 ## 9) Where to plug in custom models
 - Stage 1: YOLO weights path (training output) → feed into your pipeline if you extend inference
@@ -85,4 +91,63 @@ curl -X POST http://localhost:8000/process-all \
 
 ## 10) Validate end-to-end
 - Run a small subset through all three stages and inspect outputs before full-scale training or evaluation.
+
+---
+
+## 11) Fine-tuning optional models (online)
+
+- YOLOv8 (layout detection)
+```bash
+# Prepare data
+python scripts/training/prepare_dataset.py --data /data/my_docs --output /data/yolo_dataset
+# Train (internet ok for pip/model pulls)
+python scripts/training/train_yolo.py \
+  --data /data/yolo_dataset/dataset.yaml \
+  --output models/layout_detection \
+  --epochs 100
+```
+
+- fastText (language ID)
+```bash
+# Train supervised model; each line: __label__en your text here ...
+fasttext supervised -input lang_train.txt -output models/lid_custom -lr 0.5 -epoch 25 -wordNgrams 2
+# Use by placing models/lid_custom.bin at /app/lid.176.bin (mount or copy)
+```
+
+- BLIP-2 (image captioning; PEFT/LoRA recommended)
+```bash
+# Example (Transformers + PEFT); assumes dataset of (image, text)
+# 1) Install deps (internet)
+pip install transformers peft accelerate datasets
+# 2) Run your LoRA script (pseudo)
+python train_blip2_lora.py \
+  --base Salesforce/blip2-opt-2.7b \
+  --data /data/blip2_pairs \
+  --output models/blip2-finetuned
+# Use by pointing loader to models/blip2-finetuned
+```
+
+- LayoutLMv3 (6-class refinement)
+```bash
+# Option A: Use API training endpoint
+curl -X POST http://localhost:8000/train-layout-model \
+  -F "train_data_dir=/app/datasets/train" \
+  -F "val_data_dir=/app/datasets/val" \
+  -F "output_dir=/app/models/layoutlmv3-6class" \
+  -F "epochs=10" -F "batch_size=16" -F "learning_rate=1e-4" -F "mixed_precision=true"
+# Option B: Transformers training script (custom); save to models/layoutlmv3-6class
+# Enable with: -e LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class
+```
+
+- Pix2Struct (charts)
+```bash
+# Fine-tune Pix2StructForConditionalGeneration on chart (image, caption) pairs
+# Save to models/pix2struct-chart; enable with: -e CHART_CAPTION_CHECKPOINT
+```
+
+- Table T2T (table → text)
+```bash
+# Fine-tune a seq2seq LM (e.g., t5-base) on pairs: "summarize table: <linearized>" → "<description>"
+# Save to models/table-t2t; enable with: -e TABLE_T2T_CHECKPOINT
+```
 

@@ -76,6 +76,45 @@ curl http://localhost:8000/health
 curl http://localhost:8000/processing-stats
 ```
 
+## 🔬 Optional specialized models (enable via env vars)
+
+- Layout refinement (6-class):
+  - `LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class`
+  - Uses LayoutLMv3 to re-score YOLO regions (applied when confident).
+- Chart captioning:
+  - `CHART_CAPTION_CHECKPOINT=/app/models/pix2struct-chart`
+  - Uses Pix2Struct for charts; falls back to BLIP-2 if unavailable.
+- Table-to-text:
+  - `TABLE_T2T_CHECKPOINT=/app/models/table-t2t`
+  - Uses a seq2seq LM (e.g., T5/TableT5) on OCR text from the table region; falls back to BLIP-2.
+
+Mount models to persist:
+```bash
+-v /host/models:/app/models \
+-e TRANSFORMERS_CACHE=/app/models -e HF_HOME=/app/models -e MPLCONFIGDIR=/tmp
+```
+
+## 📦 Fully offline operation
+
+Prepare models directory before build/run:
+- YOLOv8 weights (e.g., `yolov8x.pt`), LayoutLMv3 (fine-tuned 6-class optional), BLIP‑2, fastText `lid.176.bin`, Pix2Struct (optional), Table T2T (optional).
+- Place under `./models` and build the GPU image to embed them, or mount with `-v /host/models:/app/models`.
+
+Build (GPU, offline‑ready):
+```bash
+docker build --build-arg INSTALL_GPU_DEPS=1 -t ps05-backend:gpu .
+```
+
+Save/Load image (no internet at venue):
+```bash
+docker save -o ps05-backend-gpu-offline.tar ps05-backend:gpu
+docker load -i ps05-backend-gpu-offline.tar
+```
+
+Output spec:
+- All bounding boxes standardized to `[x, y, h, w]` (HBB) across stages.
+- Per-element captions are produced for Table/Figure regions; whole-image caption may also be included.
+
 ## 🔧 **Architecture Overview**
 
 ### **3-Stage Pipeline (100% PS-05 Compliant)**

@@ -10,6 +10,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TRANSFORMERS_CACHE=/app/models
 ENV HF_HOME=/app/models
 ENV MPLCONFIGDIR=/tmp
+ENV HF_HUB_OFFLINE=0
+ENV TRANSFORMERS_OFFLINE=0
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -75,6 +77,8 @@ COPY scripts/ ./scripts/
 COPY ps05.py ./
 # Keep only the main entrypoints
 COPY start_backend.py ./
+## Include pre-fetched models in the image if present
+COPY models/ ./models/
 
 # Create necessary directories
 RUN mkdir -p datasets results logs models data/api_datasets data/api_results
