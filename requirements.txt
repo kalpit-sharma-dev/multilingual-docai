@@ -1,4 +1,4 @@
-# 🚀 PS-05 Document Understanding System - Core Dependencies
+# 🚀 PS-05 Document Understanding System - Complete Dependencies
 
 # Core ML Framework
 torch>=2.0.0
@@ -32,7 +32,7 @@ sentence-transformers>=2.2.0
 
 # Multimodal Models
 torchvision>=0.15.0
-torchaudio>=2.0.0
+torchaudio>=0.15.0
 
 # YOLO & Object Detection
 ultralytics>=8.0.0
@@ -57,11 +57,96 @@ bert-score>=0.3.11
 fastapi>=0.100.0
 uvicorn>=0.23.0
 python-multipart>=0.0.6
+aiofiles>=0.8.0
 
 # Development & Testing
 pytest>=7.4.0
 black>=23.0.0
 flake8>=6.0.0
 
+# Memory Management & System Monitoring
+psutil>=5.9.0
+
 # Optional: GPU Optimization
 # nvidia-ml-py>=11.0.0  # Uncomment for GPU monitoring
+
+# Additional Dependencies for Advanced Features
+accelerate>=0.20.0
+safetensors>=0.3.0
+huggingface-hub>=0.16.0
+
+# Image Processing & Augmentation
+scikit-image>=0.20.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Language Models & Embeddings
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0  # For similarity search
+
+# Database & Caching (for future scaling)
+redis>=4.5.0
+sqlalchemy>=2.0.0
+
+# Async & Performance
+aiohttp>=3.8.0
+asyncio-mqtt>=0.11.0
+
+# Security & Authentication (for future API security)
+python-jose>=3.3.0
+passlib>=1.7.4
+bcrypt>=4.0.0
+
+# Monitoring & Logging
+prometheus-client>=0.16.0
+structlog>=23.1.0
+
+# File Processing
+python-magic>=0.4.27
+mimetypes>=0.1.0
+
+# Compression & Archiving
+zipfile36>=0.1.3
+rarfile>=4.0
+
+# Network & HTTP
+requests>=2.31.0
+httpx>=0.24.0
+
+# Configuration Management
+python-dotenv>=1.0.0
+configparser>=5.3.0
+
+# Date & Time
+python-dateutil>=2.8.2
+pytz>=2023.3
+
+# JSON & Data Serialization
+orjson>=3.8.0
+msgpack>=1.0.5
+
+# Progress Bars & CLI
+rich>=13.3.0
+click>=8.1.0
+
+# Testing & Quality
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.4.0
+
+# Documentation
+sphinx>=7.0.0
+sphinx-rtd-theme>=1.2.0
+
+# Jupyter & Development
+jupyter>=1.0.0
+ipython>=8.12.0
+
+# Optional: Advanced ML Features
+# ray>=2.5.0  # For distributed processing
+# mlflow>=2.4.0  # For experiment tracking
+# wandb>=0.15.0  # For experiment tracking
+# optuna>=3.1.0  # For hyperparameter optimization

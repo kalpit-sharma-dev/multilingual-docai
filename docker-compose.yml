@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  ps05-backend:
+    build: .
+    container_name: ps05-document-ai
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./configs:/app/configs
+    environment:
+      - PYTHONPATH=/app
+      - CUDA_VISIBLE_DEVICES=0  # Use first GPU if available
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ps05-network
+
+  # Optional: Add Redis for job queuing
+  redis:
+    image: redis:7-alpine
+    container_name: ps05-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - ps05-network
+
+  # Optional: Add Nginx for load balancing
+  nginx:
+    image: nginx:alpine
+    container_name: ps05-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - ps05-backend
+    restart: unless-stopped
+    networks:
+      - ps05-network
+
+volumes:
+  redis_data:
+
+networks:
+  ps05-network:
+    driver: bridge
