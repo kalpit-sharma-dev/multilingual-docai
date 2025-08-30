@@ -309,12 +309,13 @@ async def process_stage(
     - **gpu_acceleration**: Enable GPU acceleration (default: True)
     """
     try:
-        # Get dataset path
-        dataset_path = f"datasets/{dataset_id}"
+        # Get dataset path (images live under data/api_datasets/{id}/images)
+        dataset_path = str(DATASET_STORAGE / dataset_id / "images")
         if not os.path.exists(dataset_path):
             raise HTTPException(status_code=404, detail="Dataset not found")
         
         # Configure optimization
+        from app.services.optimized_processing_service import ProcessingConfig  # type: ignore
         config = ProcessingConfig(
             batch_size=batch_size,
             gpu_acceleration=gpu_acceleration,
@@ -322,7 +323,7 @@ async def process_stage(
         )
         
         # Create optimized service instance
-        service = OptimizedProcessingService(config)
+        service = create_optimized_service(config)
         
         # Process specific stage
         if stage == 1:
@@ -350,6 +351,8 @@ async def process_stage(
             }
         }
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error in stage processing: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -379,12 +382,13 @@ async def process_all_stages(
     - **optimization_level**: "speed" (default) or "memory"
     """
     try:
-        # Get dataset path
-        dataset_path = f"datasets/{dataset_id}"
+        # Get dataset path (images live under data/api_datasets/{id}/images)
+        dataset_path = str(DATASET_STORAGE / dataset_id / "images")
         if not os.path.exists(dataset_path):
             raise HTTPException(status_code=404, detail="Dataset not found")
         
         # Configure for maximum speed
+        from app.services.optimized_processing_service import ProcessingConfig  # type: ignore
         config = ProcessingConfig(
             batch_size=batch_size,
             max_workers=max_workers,
@@ -394,10 +398,10 @@ async def process_all_stages(
         )
         
         # Create optimized service
-        service = OptimizedProcessingService(config)
+        service = create_optimized_service(config)
         
         # Start parallel processing
-        output_dir = f"results/{dataset_id}/gpu_optimized"
+        output_dir = str(RESULTS_STORAGE / dataset_id / "gpu_optimized")
         results = await service.process_dataset_parallel(dataset_path, output_dir)
         
         return {
@@ -417,6 +421,8 @@ async def process_all_stages(
             }
         }
         
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error in parallel processing: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -606,6 +612,8 @@ async def clean_dataset(
             json.dump(dataset_info, f)
         
         # Start cleaning in background
+        # Ensure cleaning service is initialized lazily
+        _ = get_cleaning_service()
         background_tasks.add_task(
             _clean_dataset_background,
             dataset_id,
@@ -798,6 +806,7 @@ async def train_layout_model(
     """
     try:
         # Configure training
+        from app.services.gpu_training_service import TrainingConfig, GPUTrainingService  # type: ignore
         config = TrainingConfig(
             epochs=epochs,
             batch_size=batch_size,
@@ -842,6 +851,7 @@ async def train_yolo_model(
     """
     try:
         # Configure training
+        from app.services.gpu_training_service import TrainingConfig, GPUTrainingService  # type: ignore
         config = TrainingConfig(
             epochs=epochs,
             batch_size=batch_size,
@@ -904,6 +914,8 @@ async def get_processing_stats():
             "stats": stats,
             "timestamp": datetime.now().isoformat()
         }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error getting processing stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))

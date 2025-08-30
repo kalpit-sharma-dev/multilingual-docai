@@ -10,6 +10,9 @@ ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV TRANSFORMERS_CACHE=/app/models
+ENV HF_HOME=/app/models
+ENV MPLCONFIGDIR=/tmp
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -95,6 +98,9 @@ RUN pip3 install --no-cache-dir \
     nvidia-dali-cuda120 \
     nvidia-ml-py3 \
     pynvml
+
+# Pre-fetch fastText model for language ID to avoid first-run delay
+RUN curl -L -o /app/lid.176.bin https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
 
 # Copy application code
 COPY backend/ ./backend/

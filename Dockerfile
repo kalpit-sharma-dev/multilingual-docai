@@ -7,6 +7,9 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TRANSFORMERS_CACHE=/app/models
+ENV HF_HOME=/app/models
+ENV MPLCONFIGDIR=/tmp
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -44,6 +47,27 @@ COPY requirements.minimal.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.minimal.txt
+
+# Optional GPU/ML heavy dependencies (keeps existing requirements intact)
+# Build with: docker build --build-arg INSTALL_GPU_DEPS=1 -t ps05-backend:gpu .
+ARG INSTALL_GPU_DEPS=0
+RUN if [ "$INSTALL_GPU_DEPS" = "1" ]; then \
+    echo "Installing CUDA-enabled PyTorch and ML deps..." && \
+    pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu121 \
+        torch torchvision torchaudio && \
+    pip install --no-cache-dir \
+        opencv-python-headless \
+        ultralytics \
+        transformers \
+        timm \
+        safetensors \
+        sentencepiece \
+        easyocr \
+        fasttext \
+        onnxruntime-gpu \
+        pycocotools && \
+    curl -L -o /app/lid.176.bin https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin; \
+    else echo "Skipping GPU deps installation" ; fi
 
 # Copy application code
 COPY backend/ ./backend/

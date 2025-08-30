@@ -114,7 +114,13 @@ class OptimizedProcessingService:
             models['ocr'] = easyocr.Reader(['en', 'hi', 'ur', 'ar', 'ne', 'fa'], gpu=self.device=="cuda")
             
             logger.info("Loading fastText language detection...")
-            models['langdetect'] = fasttext.load_model('lid.176.bin')
+            lid_path = Path('lid.176.bin')
+            if not lid_path.exists():
+                # Also check in /app for Docker image path
+                alt_path = Path('/app/lid.176.bin')
+                if alt_path.exists():
+                    lid_path = alt_path
+            models['langdetect'] = fasttext.load_model(str(lid_path))
             
             # Stage 3: Content Understanding
             logger.info("Loading BLIP-2 for image captioning...")
