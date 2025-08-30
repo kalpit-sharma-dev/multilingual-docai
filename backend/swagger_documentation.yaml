@@ -1,0 +1,1133 @@
+openapi: 3.0.3
+info:
+  title: PS-05 Document Understanding API
+  description: |
+    Complete 3-stage document understanding pipeline with mAP evaluation.
+    
+    ## Overview
+    This API provides a comprehensive solution for document understanding through three stages:
+    1. **Stage 1**: Layout Detection (YOLOv8, LayoutLMv3, Mask R-CNN)
+    2. **Stage 2**: Text Extraction + Language Identification (EasyOCR, Tesseract, fastText)
+    3. **Stage 3**: Content Understanding + Natural Language Generation (Table Transformer, BLIP, OFA)
+    
+    ## Key Features
+    - **Dataset Upload**: Support for large datasets (20GB+) with or without annotations
+    - **Stage-by-Stage Processing**: Process individual stages or run complete pipeline
+    - **Evaluation**: mAP calculation when annotations are available
+    - **Data Cleaning**: Comprehensive image and document cleaning services
+    - **EDA Integration**: Exploratory Data Analysis with cleaning services
+    - **Background Processing**: Optimized for large-scale operations
+    - **Docker Ready**: Containerized deployment support
+    
+    ## Evaluation Modes
+    - **With Annotations**: Full mAP evaluation and metrics
+    - **Without Annotations**: Prediction-only mode for evaluator testing
+    
+    ## Supported Formats
+    - **Images**: PNG, JPEG, JPG, TIFF
+    - **Documents**: PDF, DOCX, PPTX, TXT
+    
+  version: 1.0.0
+  contact:
+    name: PS-05 Development Team
+    email: support@ps05-docai.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local Development Server
+  - url: https://api.ps05-docai.com
+    description: Production Server
+  - url: http://localhost:8000/docs
+    description: Interactive API Documentation (Swagger UI)
+
+tags:
+  - name: Core Pipeline
+    description: Main document processing pipeline endpoints
+  - name: Dataset Management
+    description: Dataset upload, listing, and deletion
+  - name: Processing
+    description: Stage processing and pipeline execution
+  - name: Evaluation
+    description: mAP evaluation and metrics calculation
+  - name: Data Cleaning
+    description: Image and document cleaning services
+  - name: EDA Analysis
+    description: Exploratory Data Analysis services
+  - name: System
+    description: System status and health checks
+
+paths:
+  /:
+    get:
+      tags:
+        - System
+      summary: API Information
+      description: Get comprehensive information about the PS-05 API capabilities and endpoints
+      operationId: getApiInfo
+      responses:
+        '200':
+          description: API information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "PS-05 Document Understanding API"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  stages:
+                    type: array
+                    items:
+                      type: string
+                    example: ["Layout Detection", "Text Extraction + Language ID", "Content Understanding"]
+                  evaluation_modes:
+                    type: array
+                    items:
+                      type: string
+                    example: ["With Annotations (mAP)", "Without Annotations (Prediction Only)"]
+                  endpoints:
+                    type: object
+                    properties:
+                      upload_dataset:
+                        type: string
+                        example: "/upload-dataset"
+                      process_stage:
+                        type: string
+                        example: "/process-stage"
+                      process_all:
+                        type: string
+                        example: "/process-all"
+                      evaluate:
+                        type: string
+                        example: "/evaluate"
+                      get_results:
+                        type: string
+                        example: "/results/{dataset_id}"
+                      get_predictions:
+                        type: string
+                        example: "/predictions/{dataset_id}"
+                      status:
+                        type: string
+                        example: "/status"
+                      clean_dataset:
+                        type: string
+                        example: "/clean-dataset"
+                      cleaning_capabilities:
+                        type: string
+                        example: "/cleaning-capabilities"
+                      run_eda:
+                        type: string
+                        example: "/run-eda"
+                      eda_results:
+                        type: string
+                        example: "/eda-results/{dataset_id}"
+
+  /status:
+    get:
+      tags:
+        - System
+      summary: System Status
+      description: Get comprehensive system status including available models, storage information, and processing capabilities
+      operationId: getSystemStatus
+      responses:
+        '200':
+          description: System status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health Check
+      description: Simple health check endpoint for load balancers and monitoring systems
+      operationId: healthCheck
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T10:30:00Z"
+                  version:
+                    type: string
+                    example: "1.0.0"
+
+  /upload-dataset:
+    post:
+      tags:
+        - Dataset Management
+      summary: Upload Dataset
+      description: |
+        Upload a dataset for processing. Supports large datasets (20GB+) and can include optional ground truth annotations.
+        
+        **Features:**
+        - Multiple image file upload
+        - Optional annotation file (JSON format)
+        - Automatic dataset ID generation
+        - Progress tracking for large uploads
+        - Support for PNG, JPEG, JPG, TIFF formats
+        
+        **Use Cases:**
+        - Training data upload with annotations
+        - Evaluation dataset upload without annotations
+        - Large-scale document processing
+      operationId: uploadDataset
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: List of document images (PNG/JPEG/JPG/TIFF)
+                  minItems: 1
+                annotations:
+                  type: string
+                  format: binary
+                  description: Optional ground truth annotations in JSON format
+                dataset_name:
+                  type: string
+                  description: Optional name for the dataset
+                  example: "training_dataset_v1"
+            encoding:
+              files:
+                contentType: image/*
+              annotations:
+                contentType: application/json
+      responses:
+        '200':
+          description: Dataset uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetUploadResponse'
+        '400':
+          description: Bad request (invalid files or format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /process-stage:
+    post:
+      tags:
+        - Processing
+      summary: Process Specific Stage
+      description: |
+        Process a specific stage for a dataset.
+        
+        **Available Stages:**
+        - **Stage 1**: Layout Detection (YOLOv8, LayoutLMv3, Mask R-CNN)
+        - **Stage 2**: Text Extraction + Language Identification (EasyOCR, Tesseract, fastText)
+        - **Stage 3**: Content Understanding + Natural Language Generation (Table Transformer, BLIP, OFA)
+        
+        **Use Cases:**
+        - Incremental processing
+        - Stage-specific optimization
+        - Debugging individual stages
+        - Custom processing workflows
+      operationId: processStage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessingRequest'
+      responses:
+        '200':
+          description: Stage processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StageResult'
+        '400':
+          description: Bad request (invalid stage or dataset)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Dataset not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /process-all:
+    post:
+      tags:
+        - Processing
+      summary: Process All Stages
+      description: |
+        Process all 3 stages for a dataset. This runs in the background and returns a job ID.
+        Optimized for large datasets (20GB+).
+        
+        **Processing Flow:**
+        1. Layout Detection → 2. Text Extraction + Language ID → 3. Content Understanding
+        
+        **Features:**
+        - Background processing
+        - Progress tracking
+        - Memory optimization
+        - Large dataset support
+        - Automatic stage coordination
+        
+        **Use Cases:**
+        - Complete pipeline execution
+        - Production processing
+        - Large-scale document analysis
+        - End-to-end evaluation
+      operationId: processAllStages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dataset_id:
+                  type: string
+                  format: uuid
+                  description: ID of the dataset to process
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+                config:
+                  type: object
+                  description: Optional configuration parameters
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Processing started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingResponse'
+        '400':
+          description: Bad request (invalid dataset)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Dataset not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /evaluate:
+    post:
+      tags:
+        - Evaluation
+      summary: Evaluate Dataset
+      description: |
+        Evaluate dataset performance and calculate mAP scores. Requires ground truth annotations.
+        
+        **Evaluation Metrics:**
+        - **Layout Detection**: mAP, Precision, Recall, F1-score, IoU
+        - **Text Extraction**: CER, WER, Accuracy
+        - **Language ID**: Accuracy, Precision, Recall, F1-score
+        - **Overall Score**: Combined performance metric
+        
+        **Requirements:**
+        - Dataset must have been processed through all stages
+        - Ground truth annotations must be provided during upload
+        - Dataset must be in evaluation mode
+        
+        **Use Cases:**
+        - Model performance assessment
+        - Competition evaluation
+        - Quality assurance
+        - Research validation
+      operationId: evaluateDataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dataset_id:
+                  type: string
+                  format: uuid
+                  description: ID of the dataset to evaluate
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Evaluation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationResult'
+        '400':
+          description: Bad request (no annotations or dataset not processed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Dataset not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /predictions/{dataset_id}:
+    get:
+      tags:
+        - Evaluation
+      summary: Get Predictions (No Annotations)
+      description: |
+        Get predictions for datasets without annotations. This is the main endpoint for evaluator testing.
+        
+        **Purpose:**
+        - Provide predictions when ground truth is not available
+        - Support evaluator testing scenarios
+        - Enable prediction-based evaluation
+        
+        **Response Format:**
+        - Stage-wise predictions
+        - Dataset metadata
+        - Processing timestamps
+        - Evaluation notes
+        
+        **Use Cases:**
+        - Competition evaluation
+        - Model testing
+        - Production inference
+        - External validation
+      operationId: getPredictions
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          description: Unique identifier of the dataset
+          schema:
+            type: string
+            format: uuid
+            example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Predictions retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoAnnotationResponse'
+        '400':
+          description: Bad request (dataset not processed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Dataset not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /clean-dataset:
+    post:
+      tags:
+        - Data Cleaning
+      summary: Clean Dataset
+      description: |
+        Clean dataset using comprehensive image and document cleaning services.
+        
+        **Cleaning Capabilities:**
+        
+        **Image Cleaning:**
+        - Corrupt file detection & removal
+        - Deduplication (exact/near-duplicate)
+        - Resizing & rescaling
+        - Color space conversion
+        - Low-resolution handling
+        - Noise reduction
+        - Augmentation (pre-processing)
+        - EXIF data normalization
+        - Outlier detection
+        
+        **Document Cleaning:**
+        - Text extraction & encoding
+        - Boilerplate removal
+        - Hyphenation & line break handling
+        - Non-text element removal
+        - Normalization
+        - Special character removal
+        - Tokenization & stopword removal
+        - Metadata extraction & cleaning
+        - Language detection
+        - Structure recovery
+        - Deduplication
+        
+        **Supported Formats:**
+        - Images: PNG, JPEG, JPG, TIFF, BMP
+        - Documents: PDF, DOCX, PPTX, TXT
+        
+        **Workflow:**
+        1. File format detection
+        2. Type-specific cleaning
+        3. Quality assessment
+        4. Result generation
+      operationId: cleanDataset
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: List of files to clean (images and/or documents)
+                  minItems: 1
+                dataset_name:
+                  type: string
+                  description: Optional name for the dataset
+                  example: "cleaned_training_data"
+                dataset_type:
+                  type: string
+                  enum: [auto, images, documents, mixed]
+                  default: auto
+                  description: Type of dataset for cleaning optimization
+            encoding:
+              files:
+                contentType: "*/*"
+      responses:
+        '200':
+          description: Dataset cleaning started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dataset_id:
+                    type: string
+                    format: uuid
+                  dataset_name:
+                    type: string
+                  num_files:
+                    type: integer
+                  total_size_gb:
+                    type: number
+                  status:
+                    type: string
+                    example: "cleaning_started"
+                  message:
+                    type: string
+                    example: "Dataset cleaning started in background"
+        '400':
+          description: Bad request (invalid files)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /run-eda:
+    post:
+      tags:
+        - EDA Analysis
+      summary: Run EDA Analysis
+      description: |
+        Run Exploratory Data Analysis on uploaded dataset.
+        
+        **EDA Capabilities:**
+        
+        **File Format Analysis:**
+        - Format distribution
+        - File size statistics
+        - Type categorization
+        
+        **Image Properties:**
+        - Dimension analysis
+        - Rotation detection
+        - Quality assessment
+        - Color space analysis
+        
+        **Annotation Analysis:**
+        - Class distribution
+        - Bounding box statistics
+        - Quality metrics
+        - Coverage analysis
+        
+        **Visualizations:**
+        - Pie charts for formats
+        - Bar plots for dimensions
+        - Scatter plots for relationships
+        - Histograms for distributions
+        
+        **Output:**
+        - Comprehensive JSON report
+        - Markdown summary
+        - Visualization images
+        - Statistical insights
+        
+        **Use Cases:**
+        - Data quality assessment
+        - Pre-processing planning
+        - Model selection
+        - Performance optimization
+      operationId: runEdaAnalysis
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: List of files to analyze
+                  minItems: 1
+                dataset_name:
+                  type: string
+                  description: Optional name for the dataset
+                  example: "eda_analysis_dataset"
+            encoding:
+              files:
+                contentType: "*/*"
+      responses:
+        '200':
+          description: EDA analysis started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dataset_id:
+                    type: string
+                    format: uuid
+                  dataset_name:
+                    type: string
+                  num_files:
+                    type: integer
+                  total_size_gb:
+                    type: number
+                  status:
+                    type: string
+                    example: "eda_started"
+                  message:
+                    type: string
+                    example: "EDA analysis started in background"
+        '400':
+          description: Bad request (invalid files)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    # Enums
+    StageType:
+      type: string
+      enum: ["1", "2", "3"]
+      description: Available processing stages
+      example: "1"
+
+    # Request Models
+    ProcessingRequest:
+      type: object
+      required:
+        - dataset_id
+        - stage
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+          description: ID of the dataset to process
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        stage:
+          $ref: '#/components/schemas/StageType'
+        config:
+          type: object
+          description: Optional configuration parameters
+          additionalProperties: true
+          example:
+            model_type: "yolov8x"
+            confidence_threshold: 0.5
+            max_detections: 100
+
+    # Response Models
+    ProcessingResponse:
+      type: object
+      required:
+        - job_id
+        - message
+        - status
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Unique job identifier
+          example: "987fcdeb-51a2-43d1-b789-123456789abc"
+        message:
+          type: string
+          description: Status message
+          example: "Processing started in background"
+        status:
+          type: string
+          description: Processing status
+          example: "processing"
+        timestamp:
+          type: string
+          format: date-time
+          description: Response timestamp
+
+    DatasetUploadResponse:
+      type: object
+      required:
+        - dataset_id
+        - message
+        - num_images
+        - has_annotations
+        - total_size_gb
+        - evaluation_mode
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+          description: Unique dataset identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        message:
+          type: string
+          description: Upload status message
+          example: "Dataset uploaded successfully"
+        num_images:
+          type: integer
+          description: Number of images uploaded
+          example: 1500
+        has_annotations:
+          type: boolean
+          description: Whether annotations were provided
+          example: "true"
+        total_size_gb:
+          type: number
+          format: float
+          description: Total dataset size in GB
+          example: 2.5
+        evaluation_mode:
+          type: string
+          description: Evaluation mode
+          enum: ["with_annotations", "prediction_only"]
+          example: "with_annotations"
+        timestamp:
+          type: string
+          format: date-time
+          description: Upload timestamp
+
+    # Data Models
+    BoundingBox:
+      type: object
+      required:
+        - x
+        - y
+        - width
+        - height
+      properties:
+        x:
+          type: number
+          format: float
+          description: X coordinate
+          example: 100.5
+        y:
+          type: number
+          format: float
+          description: Y coordinate
+          example: 200.0
+        width:
+          type: number
+          format: float
+          description: Width
+          example: 150.0
+        height:
+          type: number
+          format: float
+          description: Height
+          example: 75.5
+
+    LayoutElement:
+      type: object
+      required:
+        - type
+        - bbox
+        - confidence
+      properties:
+        type:
+          type: string
+          description: Element type
+          enum: ["Text", "Title", "List", "Table", "Figure", "Header", "Footer"]
+          example: "Text"
+        bbox:
+          $ref: '#/components/schemas/BoundingBox'
+        confidence:
+          type: number
+          format: float
+          description: Detection confidence score
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.95
+        text:
+          type: string
+          description: Extracted text content
+          example: "This is a sample text block"
+        language:
+          type: string
+          description: Detected language
+          example: "en"
+        description:
+          type: string
+          description: Natural language description
+          example: "A paragraph containing sample text"
+
+    StageResult:
+      type: object
+      required:
+        - dataset_id
+        - stage
+        - status
+        - results
+        - processing_time
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+          description: Dataset identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        stage:
+          $ref: '#/components/schemas/StageType'
+        status:
+          type: string
+          description: Processing status
+          example: "completed"
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LayoutElement'
+          description: Processing results
+        metrics:
+          type: object
+          description: Stage-specific metrics
+          additionalProperties: true
+          example:
+            total_elements: 45
+            avg_confidence: 0.87
+            processing_speed: "2.3 images/sec"
+        processing_time:
+          type: number
+          format: float
+          description: Processing time in seconds
+          example: 45.2
+        timestamp:
+          type: string
+          format: date-time
+          description: Processing timestamp
+
+    NoAnnotationResponse:
+      type: object
+      required:
+        - dataset_id
+        - dataset_name
+        - num_images
+        - total_size_gb
+        - predictions
+        - timestamp
+        - message
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+          description: Dataset identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        dataset_name:
+          type: string
+          description: Dataset name
+          example: "evaluation_dataset_v1"
+        num_images:
+          type: integer
+          description: Number of images processed
+          example: 1000
+        total_size_gb:
+          type: number
+          format: float
+          description: Total dataset size in GB
+          example: 1.8
+        predictions:
+          type: object
+          description: Predictions from all stages
+          additionalProperties: true
+          example:
+            stage_1:
+              layout_elements: 45
+              confidence_avg: 0.89
+            stage_2:
+              text_extracted: 42
+              languages_detected: ["en", "es", "fr"]
+            stage_3:
+              content_understood: 38
+              descriptions_generated: 38
+        timestamp:
+          type: string
+          format: date-time
+          description: Response timestamp
+        message:
+          type: string
+          description: Status message
+          example: "Predictions generated successfully. No ground truth available for mAP calculation."
+        note:
+          type: string
+          description: Important note about evaluation
+          example: "No ground truth annotations provided. Use predictions for evaluation."
+
+    # Evaluation Models
+    EvaluationMetrics:
+      type: object
+      required:
+        - mAP
+        - precision
+        - recall
+        - f1_score
+        - iou_threshold
+      properties:
+        mAP:
+          type: number
+          format: float
+          description: Mean Average Precision
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.87
+        precision:
+          type: number
+          format: float
+          description: Precision score
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.89
+        recall:
+          type: number
+          format: float
+          description: Recall score
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.85
+        f1_score:
+          type: number
+          format: float
+          description: F1 score
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.87
+        iou_threshold:
+          type: number
+          format: float
+          description: IoU threshold used
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.5
+
+    EvaluationResult:
+      type: object
+      required:
+        - dataset_id
+        - layout_metrics
+        - overall_score
+        - recommendations
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+          description: Dataset identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        evaluation_time:
+          type: string
+          format: date-time
+          description: Evaluation timestamp
+        layout_metrics:
+          $ref: '#/components/schemas/EvaluationMetrics'
+        overall_score:
+          type: number
+          format: float
+          description: Overall evaluation score
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.89
+        recommendations:
+          type: array
+          items:
+            type: string
+          description: Improvement recommendations
+          example:
+            - "Increase training data for table detection"
+            - "Optimize text extraction for low-resolution images"
+            - "Improve language identification for rare languages"
+
+    # System Models
+    SystemStatus:
+      type: object
+      required:
+        - api_status
+        - timestamp
+        - available_models
+        - storage
+        - max_dataset_size_gb
+        - supported_formats
+        - processing_capabilities
+      properties:
+        api_status:
+          type: string
+          description: API status
+          example: "running"
+        timestamp:
+          type: string
+          format: date-time
+          description: Status timestamp
+        available_models:
+          type: object
+          description: Available model status
+          additionalProperties:
+            type: boolean
+          example:
+            yolov8x: "true"
+            layoutlmv3: "true"
+            mask_rcnn: "true"
+            easyocr: "true"
+            tesseract: "true"
+            fasttext: "true"
+            table_transformer: "true"
+            blip: "true"
+            ofa: "true"
+        storage:
+          type: object
+          properties:
+            datasets:
+              type: integer
+              description: Number of stored datasets
+              example: 15
+            results:
+              type: integer
+              description: Number of result sets
+              example: 12
+            total_size_gb:
+              type: number
+              format: float
+              description: Total storage used in GB
+              example: 45.2
+        max_dataset_size_gb:
+          type: integer
+          description: Maximum supported dataset size
+          example: 50
+        supported_formats:
+          type: array
+          items:
+            type: string
+          description: Supported image formats
+          example: ["PNG", "JPEG", "JPG", "TIFF"]
+        processing_capabilities:
+          type: object
+          properties:
+            batch_processing:
+              type: boolean
+              description: Batch processing support
+              example: "true"
+            background_jobs:
+              type: boolean
+              description: Background job processing
+              example: "true"
+            memory_optimization:
+              type: boolean
+              description: Memory optimization features
+              example: "true"
+
+    # Error Models
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: "Dataset not found or access denied"
+        error_code:
+          type: string
+          description: Error code for programmatic handling
+          example: "DATASET_NOT_FOUND"
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
