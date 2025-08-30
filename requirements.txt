@@ -25,6 +25,15 @@ transformers>=4.30.0
 tokenizers>=0.13.0
 sentencepiece>=0.1.99
 
+# Advanced Document Understanding Models
+datasets>=2.14.0
+fasttext>=0.9.2
+sentence-transformers>=2.2.0
+
+# Multimodal Models
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
 # YOLO & Object Detection
 ultralytics>=8.0.0
 

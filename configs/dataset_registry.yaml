@@ -2,16 +2,26 @@ datasets:
   pubLayNet:
     type: public
     path: data/public/pubLayNet
-    note: "Add download/mirror in src/ingest/download_pubLayNet()"
+    note: "Use scripts/ingest_datasets.py --dataset publaynet"
+    status: "planned"
   docLayNet:
     type: public
     path: data/public/docLayNet
+    note: "Use scripts/ingest_datasets.py --dataset doclaynet --use-hf"
+    status: "ready"
+    download_script: "scripts/ingest_datasets.py"
   icdar_mlt:
     type: public
     path: data/public/icdar_mlt
+    note: "Use scripts/ingest_datasets.py --dataset icdar"
+    status: "planned"
   hi_ocr:
     type: public
     path: data/public/hi_ocr
+    note: "Hindi OCR dataset for multilingual support"
+    status: "planned"
   challenge_train_set:
     type: private
     path: data/challenge/train_set
+    note: "Competition training data"
+    status: "available"
