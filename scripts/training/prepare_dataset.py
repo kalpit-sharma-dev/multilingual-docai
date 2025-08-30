@@ -84,15 +84,21 @@ def process_image_and_annotations(image_path: str, annotations: Dict, output_dir
         # Process annotations
         with open(label_path, 'w') as f:
             for ann in annotations.get('annotations', []):
-                category_id = ann.get('category_id', 1)  # Default to Text if not specified
-                
-                # Map category_id to our 6 classes (0-5)
-                if category_id == 1:  # Text
-                    class_id = 1
-                elif category_id == 2:  # Title
-                    class_id = 2
-                else:  # Default to Text for now
-                    class_id = 1
+                # Support both name and id
+                category_name = ann.get('category_name')
+                if category_name in class_mapping:
+                    class_id = class_mapping[category_name]
+                else:
+                    category_id = ann.get('category_id', 1)
+                    id_to_name = {
+                        0: 'Background',
+                        1: 'Text',
+                        2: 'Title',
+                        3: 'List',
+                        4: 'Table',
+                        5: 'Figure'
+                    }
+                    class_id = class_mapping.get(id_to_name.get(category_id, 'Text'), 1)
                 
                 # Convert bbox to YOLO format
                 bbox = ann.get('bbox', [0, 0, 1, 1])
@@ -188,8 +194,16 @@ def prepare_dataset(data_dir: str, output_dir: str, train_ratio: float = 0.7,
         logger.info(f"Found {len(image_files)} image files")
         
         # Class mapping for PS-05 Stage 1
+        # Explicit 6-class mapping
+        class_mapping = {
+            'Background': 0,
+            'Text': 1,
+            'Title': 2,
+            'List': 3,
+            'Table': 4,
+            'Figure': 5
+        }
         class_names = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
-        class_mapping = {name: i for i, name in enumerate(class_names)}
         
         # Shuffle and split data
         random.shuffle(image_files)

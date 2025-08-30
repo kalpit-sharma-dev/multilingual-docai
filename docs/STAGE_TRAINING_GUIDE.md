@@ -60,6 +60,7 @@ export HF_HOME=/app/models
 ```bash
 docker run -d --rm --name ps05-backend-gpu -p 8000:8000 --gpus all \
   -e TRANSFORMERS_CACHE=/app/models -e HF_HOME=/app/models -e MPLCONFIGDIR=/tmp \
+  -e USE_PADDLEOCR=1 \  # optional: PaddleOCR primary
   # Optional specialized models
   -e LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class \
   -e CHART_CAPTION_CHECKPOINT=/app/models/pix2struct-chart \

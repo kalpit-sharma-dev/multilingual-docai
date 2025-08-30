@@ -111,6 +111,14 @@ class OptimizedProcessingService:
             # Stage 2: OCR and Language Detection
             logger.info("Loading EasyOCR...")
             models['ocr'] = easyocr.Reader(['en', 'hi', 'ur', 'ar', 'ne', 'fa'], gpu=self.device=="cuda")
+            # Optional: PaddleOCR as primary (enabled when USE_PADDLEOCR=1)
+            try:
+                if os.environ.get("USE_PADDLEOCR", "0") == "1":
+                    from paddleocr import PaddleOCR  # type: ignore
+                    models['paddleocr'] = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=(self.device=="cuda"))
+                    logger.info("PaddleOCR enabled as primary OCR (lang='en').")
+            except Exception as e:
+                logger.warning(f"PaddleOCR not enabled: {e}")
             
             logger.info("Loading fastText language detection...")
             lid_path = Path('lid.176.bin')
@@ -242,9 +250,32 @@ class OptimizedProcessingService:
         return ' '.join(lines[:200])  # cap to avoid overly long prompts
 
     def _sort_text_elements_reading_order(self, text_elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Sort text elements in reading order (top-to-bottom, then left-to-right)."""
+        """Sort text elements in reading order; handle RTL languages heuristically."""
         try:
+            # Group by rows (y), then sort x; reverse x for RTL languages
+            # Detect predominant language from elements (simple vote)
+            langs = [te.get('language') for te in text_elements if te.get('language')]
+            rtl_langs = {'ar', 'fa', 'ur'}
+            is_rtl = any(l in rtl_langs for l in langs)
             ordered = sorted(text_elements, key=lambda e: (e.get('bbox', [0, 0, 0, 0])[1], e.get('bbox', [0, 0, 0, 0])[0]))
+            if is_rtl:
+                # Within same row (approx y), reverse x order
+                row_threshold = 10
+                rows: List[List[Dict[str, Any]]] = []
+                for el in ordered:
+                    placed = False
+                    for row in rows:
+                        if abs(row[0]['bbox'][1] - el['bbox'][1]) <= row_threshold:
+                            row.append(el)
+                            placed = True
+                            break
+                    if not placed:
+                        rows.append([el])
+                reordered: List[Dict[str, Any]] = []
+                for row in rows:
+                    row_sorted = sorted(row, key=lambda e: e['bbox'][0], reverse=True)
+                    reordered.extend(row_sorted)
+                ordered = reordered
             for idx, el in enumerate(ordered):
                 el['order'] = idx
             return ordered
@@ -531,8 +562,30 @@ class OptimizedProcessingService:
             # Apply preprocessing
             image = self._preprocess_image(image)
             
-            # OCR with EasyOCR (multilingual support as per requirements)
-            ocr_results = self.models['ocr'].readtext(image)
+            # OCR: Prefer PaddleOCR if enabled, fallback to EasyOCR
+            ocr_results = []
+            try:
+                if self.models.get('paddleocr') and os.environ.get("USE_PADDLEOCR", "0") == "1":
+                    paddle_out = self.models['paddleocr'].ocr(image, cls=True)
+                    # paddle_out is list per image; we pass single image
+                    if isinstance(paddle_out, list) and len(paddle_out) > 0:
+                        for line in paddle_out[0]:
+                            try:
+                                quad = line[0]
+                                text = line[1][0]
+                                score = float(line[1][1])
+                                # Normalize quad to [[x,y],...]
+                                if isinstance(quad, list) and len(quad) >= 4 and isinstance(quad[0], (list, tuple)):
+                                    bbox_quad = [[int(pt[0]), int(pt[1])] for pt in quad[:4]]
+                                    ocr_results.append((bbox_quad, text, score))
+                            except Exception:
+                                continue
+            except Exception as e:
+                logger.warning(f"PaddleOCR failed, will fallback to EasyOCR: {e}")
+                ocr_results = []
+            if not ocr_results:
+                # EasyOCR (multilingual support as per requirements)
+                ocr_results = self.models['ocr'].readtext(image)
             
             text_elements = []
             for (bbox, text, confidence) in ocr_results:
@@ -646,7 +699,7 @@ class OptimizedProcessingService:
                             crop = base_image[y:y+h, x:x+w]
                             if crop is not None and crop.size > 0:
                                 pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
-                                # Specialized paths
+                                # Specialized paths + subtype heuristic for charts/maps
                                 desc = ""
                                 if el.get("type") == "Table":
                                     table_text = self._collect_text_in_region(el["bbox"], stage2_text)
@@ -654,7 +707,16 @@ class OptimizedProcessingService:
                                     if not desc:
                                         desc = self._caption_from_pil(pil_crop)
                                 else:
-                                    # Figure (charts/maps/images): try Pix2Struct then BLIP-2
+                                    # Simple heuristic: if many straight lines/axes present, consider Chart; else Map/Image
+                                    try:
+                                        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+                                        edges = cv2.Canny(gray, 50, 150)
+                                        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=80, minLineLength=int(min(w, h)*0.4), maxLineGap=10)
+                                        subtype = 'Chart' if lines is not None and len(lines) > 2 else 'MapOrImage'
+                                    except Exception:
+                                        subtype = 'Figure'
+                                    el['subtype'] = subtype
+                                    # Try chart captioner; fallback to BLIP-2
                                     desc = self._caption_chart_from_pil(pil_crop)
                                 if desc:
                                     el["description"] = desc

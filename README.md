@@ -94,6 +94,18 @@ Mount models to persist:
 -e TRANSFORMERS_CACHE=/app/models -e HF_HOME=/app/models -e MPLCONFIGDIR=/tmp
 ```
 
+## 📝 OCR engine selection (optional)
+
+- Default: EasyOCR (multilingual) is used.
+- Optional: Enable PaddleOCR as primary (with EasyOCR fallback):
+```bash
+-e USE_PADDLEOCR=1
+```
+- Ensure PaddleOCR is installed in your image before offline evaluation:
+  - Add to your build (internet allowed during build):
+    - In Dockerfile: `pip install paddleocr`
+  - Or install locally and rebuild the image so it’s available offline at run time.
+
 ## 📦 Fully offline operation
 
 Prepare models directory before build/run:

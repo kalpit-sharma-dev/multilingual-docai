@@ -34,6 +34,7 @@ Optional: embed models into the image (offline)
 ```bash
 docker run -d --rm --name ps05-backend-gpu -p 8000:8000 --gpus all \
   -e TRANSFORMERS_CACHE=/app/models -e HF_HOME=/app/models -e MPLCONFIGDIR=/tmp \
+  -e USE_PADDLEOCR=1 \  # optional: PaddleOCR primary with EasyOCR fallback
   # Optional specialized models (mount and set if available)
   -e LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class \
   -e CHART_CAPTION_CHECKPOINT=/app/models/pix2struct-chart \
@@ -77,6 +78,24 @@ docker save -o ps05-backend-gpu-offline.tar ps05-backend:gpu
 
 # At the venue (no internet)
 docker load -i ps05-backend-gpu-offline.tar
+```
+
+## 8) Offline models folder structure (example)
+```
+models/
+  yolov8x.pt                         # YOLOv8 weights
+  layoutlmv3-6class/                 # optional fine-tuned checkpoint
+    config.json
+    pytorch_model.bin
+    preprocessor_config.json
+    tokenizer.json (if applicable)
+  blip2-opt-2.7b/                    # BLIP-2 files (if embedded)
+    config.json ...
+  pix2struct-chart/                  # optional chart captioner
+    config.json ...
+  table-t2t/                         # optional table-to-text model
+    config.json ...
+  lid.176.bin                        # fastText language ID
 ```
 
 - Single stage (1, 2, or 3):
