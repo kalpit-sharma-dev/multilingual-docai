@@ -1,5 +1,5 @@
-# PS-05 Challenge - Complete Backend Solution
-# Optimized for A100 GPU with 2-hour evaluation time limit
+# PS-05 Challenge - Working Backend Solution
+# Minimal dependencies for reliability
 
 FROM python:3.11-slim
 
@@ -8,37 +8,16 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install essential system dependencies only
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    pkg-config \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libgcc-s1 \
-    libstdc++6 \
-    libc6 \
-    libtesseract-dev \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-hin \
-    tesseract-ocr-urd \
-    tesseract-ocr-ara \
-    tesseract-ocr-nep \
-    tesseract-ocr-fas \
-    git \
-    wget \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy minimal requirements first for better caching
 COPY requirements.minimal.txt .
 
 # Install Python dependencies
@@ -49,8 +28,6 @@ RUN pip install --no-cache-dir -r requirements.minimal.txt
 COPY backend/ ./backend/
 COPY scripts/ ./scripts/
 COPY ps05.py ./
-# Keep only the main entrypoints
-COPY start_backend.py ./
 
 # Create necessary directories
 RUN mkdir -p datasets results logs models data/api_datasets data/api_results
@@ -65,5 +42,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command - run uvicorn directly (no ps05.py args)
-CMD ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command
+CMD ["python", "ps05.py", "backend", "--start", "--host", "0.0.0.0", "--port", "8000"]

@@ -201,12 +201,24 @@ def run_backend(args):
     """Manage backend API."""
     if args.start:
         print("🚀 Starting PS-05 Backend Server...")
-        print(f"📡 Server will be available at: http://localhost:{args.port}")
+        print(f"📡 Server will be available at: http://0.0.0.0:{args.port}")
         print("💡 Use Ctrl+C to stop the server")
         
         try:
-            os.chdir('backend')
-            os.system(f'python -m uvicorn app.main:app --host 0.0.0.0 --port {args.port}')
+            # Import and start the backend directly
+            import uvicorn
+            from backend.app.main import app
+            
+            # Start the server
+            uvicorn.run(
+                app, 
+                host="0.0.0.0", 
+                port=args.port,
+                log_level="info"
+            )
+        except ImportError as e:
+            print(f"❌ Failed to import backend: {e}")
+            print("💡 Make sure all dependencies are installed")
         except Exception as e:
             print(f"❌ Failed to start backend: {e}")
     

@@ -16,7 +16,7 @@ Features:
 - Handles large datasets (20GB+)
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -29,15 +29,25 @@ import shutil
 import uuid
 from datetime import datetime
 
-# Import our core modules
-from .services.document_processor import DocumentProcessor
-from .services.stage_processor import StageProcessor
-from .services.evaluation_service import EvaluationService
-from .services.unified_cleaning_service import UnifiedCleaningService
+# NOTE: Heavy services are imported lazily to allow the API to start even if
+# optional ML dependencies aren't installed in the current image.
 from .models.schemas import (
     ProcessingRequest, ProcessingResponse, StageResult, 
     DatasetUploadResponse, EvaluationResult, NoAnnotationResponse
 )
+
+# Type-only imports (avoid importing heavy deps at runtime)
+try:  # typing guard for editors; does nothing at runtime if missing
+    from typing import TYPE_CHECKING
+    if TYPE_CHECKING:
+        from .services.document_processor import DocumentProcessor
+        from .services.stage_processor import StageProcessor
+        from .services.evaluation_service import EvaluationService
+        from .services.unified_cleaning_service import UnifiedCleaningService
+        from app.services.gpu_training_service import GPUTrainingService, TrainingConfig
+        from app.services.optimized_processing_service import OptimizedProcessingService, ProcessingConfig
+except Exception:
+    pass
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -59,11 +69,70 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize services
-document_processor = DocumentProcessor()
-stage_processor = StageProcessor()
-evaluation_service = EvaluationService()
-cleaning_service = UnifiedCleaningService()
+# Lazy singletons for heavy services
+document_processor = None
+stage_processor = None
+evaluation_service = None
+cleaning_service = None
+gpu_training_service = None
+optimized_service = None
+
+
+def get_stage_processor():
+    global stage_processor
+    if stage_processor is None:
+        try:
+            from .services.stage_processor import StageProcessor
+            stage_processor = StageProcessor()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"StageProcessor unavailable: {e}")
+            stage_processor = None
+    return stage_processor
+
+
+def get_evaluation_service():
+    global evaluation_service
+    if evaluation_service is None:
+        try:
+            from .services.evaluation_service import EvaluationService
+            evaluation_service = EvaluationService()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"EvaluationService unavailable: {e}")
+            evaluation_service = None
+    return evaluation_service
+
+
+def get_cleaning_service():
+    global cleaning_service
+    if cleaning_service is None:
+        try:
+            from .services.unified_cleaning_service import UnifiedCleaningService
+            cleaning_service = UnifiedCleaningService()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"UnifiedCleaningService unavailable: {e}")
+            cleaning_service = None
+    return cleaning_service
+
+
+def get_gpu_training_service():
+    global gpu_training_service
+    if gpu_training_service is None:
+        try:
+            from app.services.gpu_training_service import GPUTrainingService
+            gpu_training_service = GPUTrainingService()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"GPUTrainingService unavailable: {e}")
+            gpu_training_service = None
+    return gpu_training_service
+
+
+def create_optimized_service(config=None):
+    try:
+        from app.services.optimized_processing_service import OptimizedProcessingService
+        return OptimizedProcessingService(config)
+    except Exception as e:
+        logging.getLogger(__name__).error(f"OptimizedProcessingService unavailable: {e}")
+        raise HTTPException(status_code=503, detail="Optimized processing service unavailable. Ensure ML dependencies are installed.")
 
 # Global storage for datasets and results
 DATASET_STORAGE = Path("data/api_datasets")
@@ -81,8 +150,8 @@ async def root():
         "evaluation_modes": ["With Annotations (mAP)", "Without Annotations (Prediction Only)"],
         "endpoints": {
             "upload_dataset": "/upload-dataset",
-            "process_stage": "/process-stage",
-            "process_all": "/process-all",
+            "process_stage": "/process-stage (GPU Optimized)",
+            "process_all": "/process-all (GPU Optimized)",
             "evaluate": "/evaluate",
             "get_results": "/results/{dataset_id}",
             "get_predictions": "/predictions/{dataset_id}",
@@ -90,7 +159,16 @@ async def root():
             "clean_dataset": "/clean-dataset",
             "cleaning_capabilities": "/cleaning-capabilities",
             "run_eda": "/run-eda",
-            "eda_results": "/eda-results/{dataset_id}"
+            "eda_results": "/eda-results/{dataset_id}",
+            "training": "/train-layout-model, /train-yolo-model",
+            "gpu_monitoring": "/training-stats, /processing-stats"
+        },
+        "gpu_optimization": {
+            "enabled": True,
+            "target_gpu": "NVIDIA A100",
+            "batch_size": "50 images (A100 optimized)",
+            "parallel_processing": True,
+            "mixed_precision": "FP16 enabled"
         }
     }
 
@@ -101,7 +179,7 @@ async def get_status():
         status = {
             "api_status": "running",
             "timestamp": datetime.now().isoformat(),
-            "available_models": stage_processor.get_available_models(),
+            "available_models": (get_stage_processor().get_available_models() if get_stage_processor() else []),
             "storage": {
                 "datasets": len(list(DATASET_STORAGE.iterdir())),
                 "results": len(list(RESULTS_STORAGE.iterdir())),
@@ -209,67 +287,138 @@ async def upload_dataset(
         logger.error(f"Dataset upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/process-stage", response_model=StageResult)
-async def process_stage(request: ProcessingRequest):
-    """
-    Process a specific stage for a dataset.
-    
-    Stages:
-    - 1: Layout Detection
-    - 2: Text Extraction + Language ID
-    - 3: Content Understanding
-    """
-    try:
-        dataset_dir = DATASET_STORAGE / request.dataset_id
-        if not dataset_dir.exists():
-            raise HTTPException(status_code=404, detail="Dataset not found")
-        
-        # Process the requested stage
-        result = await stage_processor.process_stage(
-            dataset_id=request.dataset_id,
-            stage=request.stage,
-            config=request.config
-        )
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Stage processing failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/process-all", response_model=ProcessingResponse)
-async def process_all_stages(
-    background_tasks: BackgroundTasks,
-    dataset_id: str,
-    config: Optional[Dict] = None
+@app.post("/process-stage", tags=["Processing"])
+async def process_stage(
+    dataset_id: str = Form(...),
+    stage: int = Form(...),
+    optimization_level: str = Form("speed"),
+    batch_size: int = Form(50),
+    gpu_acceleration: bool = Form(True)
 ):
     """
-    Process all 3 stages for a dataset.
-    This runs in the background and returns a job ID.
-    Optimized for large datasets (20GB+).
+    Process a specific stage for a dataset with GPU optimization.
+    
+    **Available Stages:**
+    - **Stage 1**: Layout Detection (YOLOv8, LayoutLMv3, Mask R-CNN)
+    - **Stage 2**: Text Extraction + Language Identification (EasyOCR, Tesseract, fastText)
+    - **Stage 3**: Content Understanding + Natural Language Generation (Table Transformer, BLIP, OFA)
+    
+    **Optimization Options:**
+    - **optimization_level**: "speed" (default) or "memory"
+    - **batch_size**: Number of images per batch (default: 50 for A100)
+    - **gpu_acceleration**: Enable GPU acceleration (default: True)
     """
     try:
-        dataset_dir = DATASET_STORAGE / dataset_id
-        if not dataset_dir.exists():
+        # Get dataset path
+        dataset_path = f"datasets/{dataset_id}"
+        if not os.path.exists(dataset_path):
             raise HTTPException(status_code=404, detail="Dataset not found")
         
-        # Start background processing
-        job_id = str(uuid.uuid4())
-        background_tasks.add_task(
-            stage_processor.process_all_stages,
-            dataset_id=dataset_id,
-            job_id=job_id,
-            config=config
+        # Configure optimization
+        config = ProcessingConfig(
+            batch_size=batch_size,
+            gpu_acceleration=gpu_acceleration,
+            memory_optimization=(optimization_level == "memory")
         )
         
-        return ProcessingResponse(
-            job_id=job_id,
-            message="Processing started in background",
-            status="processing"
-        )
+        # Create optimized service instance
+        service = OptimizedProcessingService(config)
+        
+        # Process specific stage
+        if stage == 1:
+            # Layout detection
+            results = await service._detect_layout_gpu(dataset_path)
+        elif stage == 2:
+            # Text extraction + Language ID
+            results = await service._extract_text_and_language(dataset_path)
+        elif stage == 3:
+            # Content understanding
+            results = await service._understand_content_gpu(dataset_path)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid stage number")
+        
+        return {
+            "status": "completed",
+            "dataset_id": dataset_id,
+            "stage": stage,
+            "results": results,
+            "gpu_stats": service.get_processing_stats(),
+            "optimization": {
+                "level": optimization_level,
+                "batch_size": batch_size,
+                "gpu_acceleration": gpu_acceleration
+            }
+        }
         
     except Exception as e:
-        logger.error(f"All-stage processing failed: {e}")
+        logger.error(f"Error in stage processing: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/process-all", tags=["Processing"])
+async def process_all_stages(
+    dataset_id: str = Form(...),
+    parallel_processing: bool = Form(True),
+    max_workers: int = Form(8),
+    gpu_acceleration: bool = Form(True),
+    batch_size: int = Form(50),
+    optimization_level: str = Form("speed")
+):
+    """
+    Process all 3 stages for a dataset with GPU optimization.
+    This runs in the background and returns a job ID.
+    Optimized for large datasets (20GB+) and A100 GPU.
+    
+    **Processing Flow:**
+    1. Layout Detection → 2. Text Extraction + Language ID → 3. Content Understanding
+    
+    **Optimization Options:**
+    - **parallel_processing**: Run all stages simultaneously (default: True)
+    - **max_workers**: Number of parallel workers (default: 8)
+    - **gpu_acceleration**: Enable GPU acceleration (default: True)
+    - **batch_size**: Images per batch (default: 50 for A100)
+    - **optimization_level**: "speed" (default) or "memory"
+    """
+    try:
+        # Get dataset path
+        dataset_path = f"datasets/{dataset_id}"
+        if not os.path.exists(dataset_path):
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        
+        # Configure for maximum speed
+        config = ProcessingConfig(
+            batch_size=batch_size,
+            max_workers=max_workers,
+            gpu_acceleration=gpu_acceleration,
+            memory_optimization=(optimization_level == "memory"),
+            save_intermediate=True
+        )
+        
+        # Create optimized service
+        service = OptimizedProcessingService(config)
+        
+        # Start parallel processing
+        output_dir = f"results/{dataset_id}/gpu_optimized"
+        results = await service.process_dataset_parallel(dataset_path, output_dir)
+        
+        return {
+            "status": "completed",
+            "dataset_id": dataset_id,
+            "total_images": results["total_images"],
+            "processing_time": results["processing_time"],
+            "speed_images_per_second": results["speed_images_per_second"],
+            "output_directory": results["output_directory"],
+            "gpu_stats": service.get_processing_stats(),
+            "optimization": {
+                "parallel_processing": parallel_processing,
+                "max_workers": max_workers,
+                "gpu_acceleration": gpu_acceleration,
+                "batch_size": config.batch_size,
+                "level": optimization_level
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in parallel processing: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/evaluate", response_model=EvaluationResult)
@@ -292,7 +441,10 @@ async def evaluate_dataset(dataset_id: str):
             )
         
         # Run evaluation
-        evaluation_result = await evaluation_service.evaluate_dataset(
+        service = get_evaluation_service()
+        if service is None:
+            raise HTTPException(status_code=503, detail="Evaluation service unavailable")
+        evaluation_result = await service.evaluate_dataset(
             dataset_id=dataset_id
         )
         
@@ -628,6 +780,132 @@ async def get_eda_results(dataset_id: str):
         
     except Exception as e:
         logger.error(f"Failed to get EDA results: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/train-layout-model", tags=["Training"])
+async def train_layout_model(
+    train_data_dir: str = Form(...),
+    val_data_dir: str = Form(...),
+    output_dir: str = Form(...),
+    epochs: int = Form(50),
+    batch_size: int = Form(16),
+    learning_rate: float = Form(1e-4),
+    mixed_precision: bool = Form(True)
+):
+    """
+    Train LayoutLMv3 model for document layout classification.
+    Optimized for A100 GPU with PyTorch.
+    """
+    try:
+        # Configure training
+        config = TrainingConfig(
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            mixed_precision=mixed_precision,
+            gpu_acceleration=True
+        )
+        
+        # Create training service
+        service = GPUTrainingService(config)
+        
+        # Setup training
+        service.setup_layout_training()
+        
+        # Start training
+        results = service.train_layout_model(train_data_dir, val_data_dir, output_dir)
+        
+        # Cleanup
+        service.cleanup()
+        
+        return {
+            "status": "success",
+            "message": "Layout model training completed",
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in layout model training: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/train-yolo-model", tags=["Training"])
+async def train_yolo_model(
+    data_yaml_path: str = Form(...),
+    output_dir: str = Form(...),
+    epochs: int = Form(50),
+    batch_size: int = Form(16),
+    learning_rate: float = Form(1e-4)
+):
+    """
+    Train YOLOv8 model for document object detection.
+    Optimized for A100 GPU.
+    """
+    try:
+        # Configure training
+        config = TrainingConfig(
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            gpu_acceleration=True
+        )
+        
+        # Create training service
+        service = GPUTrainingService(config)
+        
+        # Setup training
+        service.setup_yolo_training()
+        
+        # Start training
+        results = service.train_yolo_model(data_yaml_path, output_dir)
+        
+        # Cleanup
+        service.cleanup()
+        
+        return {
+            "status": "success",
+            "message": "YOLO model training completed",
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in YOLO model training: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/training-stats", tags=["Training"])
+async def get_training_stats():
+    """
+    Get current training statistics and GPU usage.
+    """
+    try:
+        service = get_gpu_training_service()
+        if service is None:
+            raise HTTPException(status_code=503, detail="GPU training service unavailable")
+        stats = service.get_training_stats()
+        return {
+            "status": "success",
+            "stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting training stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/processing-stats", tags=["System"])
+async def get_processing_stats():
+    """
+    Get current processing statistics and GPU usage.
+    """
+    try:
+        # Create on demand to avoid heavy imports at startup
+        service = create_optimized_service()
+        stats = service.get_processing_stats()
+        return {
+            "status": "success",
+            "stats": stats,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting processing stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")

@@ -1,0 +1,178 @@
+# GPU-Optimized Dockerfile for PS-05 Challenge (A100 GPU)
+# Optimized for Ubuntu 24.04, 48-core CPU, 256GB RAM, A100 GPU
+
+FROM nvidia/cuda:12.1-devel-ubuntu24.04
+
+# Set environment variables for optimization
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    python3-pip \
+    git \
+    wget \
+    curl \
+    build-essential \
+    cmake \
+    pkg-config \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgcc-s1 \
+    libstdc++6 \
+    libc6 \
+    libtesseract-dev \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-hin \
+    tesseract-ocr-urd \
+    tesseract-ocr-ara \
+    tesseract-ocr-nep \
+    tesseract-ocr-fas \
+    libpoppler-cpp-dev \
+    poppler-utils \
+    libmagickwand-dev \
+    imagemagick \
+    ffmpeg \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libavutil-dev \
+    libavfilter-dev \
+    libavdevice-dev \
+    libpostproc-dev \
+    libswresample-dev \
+    libx264-dev \
+    libx265-dev \
+    libvpx-dev \
+    libmp3lame-dev \
+    libopus-dev \
+    libvorbis-dev \
+    libtheora-dev \
+    libxvid-dev \
+    libxvidcore-dev \
+    libxvidcore4 \
+    libxvidcore4-dev \
+    libxvidcore4-dbg \
+    libxvidcore4-doc \
+    libxvidcore4-utils \
+    libxvidcore4-dev \
+    libxvidcore4-dbg \
+    libxvidcore4-doc \
+    libxvidcore4-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symbolic links for Python
+RUN ln -s /usr/bin/python3.11 /usr/bin/python
+RUN ln -s /usr/bin/python3.11 /usr/bin/python3
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements_gpu_optimized.txt .
+
+# Install Python dependencies with GPU optimization
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip3 install --no-cache-dir -r requirements_gpu_optimized.txt
+
+# Install additional GPU-optimized packages
+RUN pip3 install --no-cache-dir \
+    torch-tensorrt \
+    apex \
+    nvidia-apex \
+    nvidia-dali-cuda120 \
+    nvidia-ml-py3 \
+    pynvml
+
+# Copy application code
+COPY backend/ ./backend/
+COPY scripts/ ./scripts/
+COPY ps05.py ./
+
+# Create necessary directories
+RUN mkdir -p datasets results logs models
+
+# Set permissions
+RUN chmod +x ps05.py
+
+# Expose port
+EXPOSE 8000
+
+# Set environment variables for optimization
+ENV PYTHONPATH=/app
+ENV CUDA_LAUNCH_BLOCKING=0
+ENV TORCH_CUDNN_V8_API_ENABLED=1
+ENV TORCH_CUDNN_V8_API_DISABLED=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_LAYOUTLM=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_YOLO=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_BLIP=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_OCR=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_FASTTEXT=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_TRANSFORMERS=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_ULTRALYTICS=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_EASYOCR=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_FASTTEXT=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PIL=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_OPENCV=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_NUMPY=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PANDAS=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_SCIPY=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_MATPLOTLIB=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_SEABORN=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PLOTLY=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_SCIKIT_LEARN=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_NLTK=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_SPACY=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_ALBUMENTATIONS=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_IMGAUG=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_IMAGEHASH=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYMUPDF=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYPDF2=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYTHON_DOCX=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYTHON_PPTX=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_FASTAPI=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_UVICORN=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYTHON_MULTIPART=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYDANTIC=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_AIOHTTP=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_ASYNCIO_MQTT=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PATHLIB2=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_WATCHDOG=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_LOGURU=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PROMETHEUS_CLIENT=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYTEST=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_PYTEST_ASYNCIO=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_BLACK=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_FLAKE8=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_MYPY=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_CUPY_CUDA12X=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_NUMBA=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_ONNX=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_ONNXRUNTIME_GPU=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_TENSORRT=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_ACCELERATE=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_DEEPSPEED=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_TENSORBOARD=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_WANDB=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_TQDM=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_CLICK=0
+ENV TORCH_CUDNN_V8_API_DISABLED_FOR_RICH=0
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command
+CMD ["python", "ps05.py", "backend", "--start", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  ps05-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: ps05-gpu-challenge
+    ports:
+      - "8000:8000"
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - PYTHONPATH=/app
+      - CUDA_LAUNCH_BLOCKING=0
+      - TORCH_CUDNN_V8_API_ENABLED=1
+      - TORCH_CUDNN_V8_API_DISABLED=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_LAYOUTLM=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_YOLO=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_BLIP=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_OCR=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_FASTTEXT=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_TRANSFORMERS=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_ULTRALYTICS=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_EASYOCR=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PIL=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_OPENCV=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_NUMPY=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PANDAS=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_SCIPY=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_MATPLOTLIB=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_SEABORN=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PLOTLY=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_SCIKIT_LEARN=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_NLTK=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_SPACY=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_ALBUMENTATIONS=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_IMGAUG=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_IMAGEHASH=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYMUPDF=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYPDF2=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYTHON_DOCX=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYTHON_PPTX=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_FASTAPI=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_UVICORN=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYTHON_MULTIPART=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYDANTIC=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_AIOHTTP=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_ASYNCIO_MQTT=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PATHLIB2=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_WATCHDOG=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_LOGURU=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PROMETHEUS_CLIENT=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYTEST=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_PYTEST_ASYNCIO=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_BLACK=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_FLAKE8=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_MYPY=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_CUPY_CUDA12X=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_NUMBA=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_ONNX=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_ONNXRUNTIME_GPU=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_TENSORRT=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_ACCELERATE=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_DEEPSPEED=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_TENSORBOARD=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_WANDB=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_TQDM=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_CLICK=0
+      - TORCH_CUDNN_V8_API_DISABLED_FOR_RICH=0
+    volumes:
+      - ./datasets:/app/datasets
+      - ./results:/app/results
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Monitoring service for GPU metrics
+  gpu-monitor:
+    image: nvidia/cuda:12.1-base-ubuntu24.04
+    container_name: ps05-gpu-monitor
+    command: >
+      bash -c "
+        apt-get update && apt-get install -y nvidia-utils-535 &&
+        nvidia-smi -l 1
+      "
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=utility
+    volumes:
+      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi
+      - /usr/bin/nvidia-debugdump:/usr/bin/nvidia-debugdump
+      - /usr/bin/nvidia-persistenced:/usr/bin/nvidia-persistenced
+      - /usr/bin/nvidia-cuda-mps-control:/usr/bin/nvidia-cuda-mps-control
+      - /usr/bin/nvidia-cuda-mps-server:/usr/bin/nvidia-cuda-mps-server
+      - /usr/bin/nvidia-modprobe:/usr/bin/nvidia-modprobe
+      - /usr/bin/nvidia-settings:/usr/bin/nvidia-settings
+      - /usr/bin/nvidia-xconfig:/usr/bin/nvidia-xconfig
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [utility]
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ps05-gpu-network

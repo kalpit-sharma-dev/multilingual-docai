@@ -1,21 +1,30 @@
-version: '3.8'
+# Docker Compose file for PS-05 Challenge
 
 services:
+  # Main PS-05 Backend Service
   ps05-backend:
-    build: .
-    container_name: ps05-document-ai
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ps05-backend
     ports:
       - "8000:8000"
-    volumes:
-      - ./data:/app/data
-      - ./models:/app/models
-      - ./configs:/app/configs
     environment:
       - PYTHONPATH=/app
-      - CUDA_VISIBLE_DEVICES=0  # Use first GPU if available
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./datasets:/app/datasets
+      - ./results:/app/results
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -23,7 +32,7 @@ services:
     networks:
       - ps05-network
 
-  # Optional: Add Redis for job queuing
+  # Redis for caching and job queuing
   redis:
     image: redis:7-alpine
     container_name: ps05-redis
@@ -35,23 +44,100 @@ services:
     networks:
       - ps05-network
 
-  # Optional: Add Nginx for load balancing
+  # PostgreSQL for metadata storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: ps05-postgres
+    environment:
+      POSTGRES_DB: ps05_challenge
+      POSTGRES_USER: ps05_user
+      POSTGRES_PASSWORD: ps05_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - ps05-network
+
+  # Nginx for load balancing and static file serving
   nginx:
     image: nginx:alpine
     container_name: ps05-nginx
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./results:/var/www/results
     depends_on:
       - ps05-backend
     restart: unless-stopped
     networks:
       - ps05-network
 
+  # Monitoring service
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: ps05-monitoring
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - ps05-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ps05-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - monitoring
+    restart: unless-stopped
+    networks:
+      - ps05-network
+
+  # File upload service for large datasets
+  upload-service:
+    image: nginx:alpine
+    container_name: ps05-upload
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./datasets:/var/www/datasets
+    restart: unless-stopped
+    networks:
+      - ps05-network
+
 volumes:
   redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   ps05-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
