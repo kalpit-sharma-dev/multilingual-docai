@@ -33,6 +33,7 @@ from datetime import datetime
 from .services.document_processor import DocumentProcessor
 from .services.stage_processor import StageProcessor
 from .services.evaluation_service import EvaluationService
+from .services.unified_cleaning_service import UnifiedCleaningService
 from .models.schemas import (
     ProcessingRequest, ProcessingResponse, StageResult, 
     DatasetUploadResponse, EvaluationResult, NoAnnotationResponse
@@ -62,6 +63,7 @@ app.add_middleware(
 document_processor = DocumentProcessor()
 stage_processor = StageProcessor()
 evaluation_service = EvaluationService()
+cleaning_service = UnifiedCleaningService()
 
 # Global storage for datasets and results
 DATASET_STORAGE = Path("data/api_datasets")
@@ -84,7 +86,9 @@ async def root():
             "evaluate": "/evaluate",
             "get_results": "/results/{dataset_id}",
             "get_predictions": "/predictions/{dataset_id}",
-            "status": "/status"
+            "status": "/status",
+            "clean_dataset": "/clean-dataset",
+            "cleaning_capabilities": "/cleaning-capabilities"
         }
     }
 
@@ -402,6 +406,116 @@ async def delete_dataset(dataset_id: str):
         
     except Exception as e:
         logger.error(f"Failed to delete dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/clean-dataset")
+async def clean_dataset(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    dataset_name: Optional[str] = None,
+    dataset_type: str = "auto"
+):
+    """
+    Clean dataset using comprehensive image and document cleaning.
+    
+    - files: List of files to clean (images and/or documents)
+    - dataset_name: Optional name for the dataset
+    - dataset_type: "auto", "images", "documents", or "mixed"
+    """
+    try:
+        # Generate dataset ID
+        dataset_id = str(uuid.uuid4())
+        dataset_dir = DATASET_STORAGE / dataset_id
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save uploaded files
+        total_size_bytes = 0
+        for file in files:
+            file_path = dataset_dir / file.filename
+            with open(file_path, "wb") as buffer:
+                content = file.file.read()
+                buffer.write(content)
+                total_size_bytes += len(content)
+        
+        # Save dataset info
+        dataset_info = {
+            "dataset_id": dataset_id,
+            "dataset_name": dataset_name or f"dataset_{dataset_id[:8]}",
+            "num_files": len(files),
+            "total_size_bytes": total_size_bytes,
+            "total_size_gb": total_size_bytes / (1024**3),
+            "upload_timestamp": datetime.now().isoformat(),
+            "dataset_type": dataset_type
+        }
+        
+        with open(dataset_dir / "dataset_info.json", "w") as f:
+            json.dump(dataset_info, f)
+        
+        # Start cleaning in background
+        background_tasks.add_task(
+            _clean_dataset_background,
+            dataset_id,
+            dataset_dir,
+            dataset_type
+        )
+        
+        return {
+            "dataset_id": dataset_id,
+            "dataset_name": dataset_info["dataset_name"],
+            "num_files": len(files),
+            "total_size_gb": dataset_info["total_size_gb"],
+            "status": "cleaning_started",
+            "message": "Dataset cleaning started in background"
+        }
+        
+    except Exception as e:
+        logger.error(f"Dataset cleaning failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def _clean_dataset_background(dataset_id: str, dataset_dir: Path, dataset_type: str):
+    """Background task for dataset cleaning."""
+    try:
+        # Create output directory for cleaned data
+        output_dir = RESULTS_STORAGE / dataset_id / "cleaned_data"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Run cleaning
+        cleaning_results = cleaning_service.clean_dataset(
+            input_dir=dataset_dir,
+            output_dir=output_dir,
+            dataset_type=dataset_type
+        )
+        
+        # Save cleaning results
+        with open(output_dir / "cleaning_results.json", "w") as f:
+            json.dump(cleaning_results, f)
+        
+        logger.info(f"Dataset {dataset_id} cleaning completed")
+        
+    except Exception as e:
+        logger.error(f"Background cleaning failed for {dataset_id}: {e}")
+
+@app.get("/cleaning-capabilities")
+async def get_cleaning_capabilities():
+    """Get information about cleaning capabilities."""
+    try:
+        capabilities = cleaning_service.get_cleaning_capabilities()
+        return {
+            "cleaning_capabilities": capabilities,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to get cleaning capabilities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/cleaning-status/{dataset_id}")
+async def get_cleaning_status(dataset_id: str):
+    """Get cleaning status for a specific dataset."""
+    try:
+        status = cleaning_service.get_cleaning_status(dataset_id)
+        return status
+    except Exception as e:
+        logger.error(f"Failed to get cleaning status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
