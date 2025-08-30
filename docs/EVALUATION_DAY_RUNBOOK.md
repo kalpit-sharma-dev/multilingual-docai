@@ -140,4 +140,14 @@ docker compose -f docker-compose.gpu.yml up -d --build
 docker stop ps05-backend-gpu
 ```
 
+## 11) Timed rehearsal and schema check
+- Rehearsal (assumes dataset mounted inside container):
+```bash
+bash scripts/utilities/rehearsal.sh <DATASET_ID> http://localhost:8000
+```
+- Schema check:
+```bash
+python scripts/utilities/schema_check.py results/<DATASET_ID>
+```
+
 

@@ -123,6 +123,18 @@ docker save -o ps05-backend-gpu-offline.tar ps05-backend:gpu
 docker load -i ps05-backend-gpu-offline.tar
 ```
 
+## ⏱️ Timed rehearsal and schema check
+
+- Timed rehearsal (dataset must be mounted in container):
+```bash
+bash scripts/utilities/rehearsal.sh <DATASET_ID> http://localhost:8000
+```
+
+- Schema check (validate [x,y,h,w] and required keys on outputs):
+```bash
+python scripts/utilities/schema_check.py results/<DATASET_ID>
+```
+
 Output spec:
 - All bounding boxes standardized to `[x, y, h, w]` (HBB) across stages.
 - Per-element captions are produced for Table/Figure regions; whole-image caption may also be included.
