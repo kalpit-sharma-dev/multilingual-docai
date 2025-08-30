@@ -6,10 +6,11 @@ import argparse
 from pathlib import Path
 from typing import List, Dict
 
-# Add the parent directory to the Python path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add the core directory to the Python path
+core_path = Path(__file__).parent.parent / "core"
+sys.path.insert(0, str(core_path))
 
-from src.pipeline.infer_page import PS05Pipeline
+from pipeline.infer_page import PS05Pipeline
 
 COLOR_ORDER = {
     "Background": (200, 200, 200),

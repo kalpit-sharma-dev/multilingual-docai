@@ -15,11 +15,11 @@ from pathlib import Path
 import numpy as np
 
 # Import our models
-from src.models.layout_detector import LayoutDetector
-from src.models.ocr_engine import OCREngine
-from src.models.langid_classifier import LanguageClassifier
-from src.models.nl_generator import NLGenerator
-from src.data.preprocess import deskew, preprocess_image
+from core.models.layout_detector import LayoutDetector
+from core.models.ocr_engine import OCREngine
+from core.models.langid_classifier import LanguageClassifier
+from core.models.nl_generator import NLGenerator
+from core.preprocessing.preprocess import deskew, preprocess_image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

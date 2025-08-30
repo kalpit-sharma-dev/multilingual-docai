@@ -54,7 +54,11 @@ def cleanup_repository():
     
     print("✅ Cleanup completed!")
     print("\n📋 Repository is now clean and organized!")
-    print("🎯 Use 'python scripts/run_stages.py --help' to get started")
+    print("🎯 Use 'python ps05.py --help' to get started")
+
+def main():
+    """Main function for the cleanup script."""
+    cleanup_repository()
 
 if __name__ == "__main__":
-    cleanup_repository()
+    main()

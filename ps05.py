@@ -1,225 +1,94 @@
 #!/usr/bin/env python3
 """
-PS-05 Intelligent Multilingual Document Understanding System
+PS-05 Main Entry Point
 
-Main command-line interface for the PS-05 document understanding system.
-Supports training, inference, evaluation, and deployment.
+This is the main entry point for the PS-05 Document Understanding System.
+It provides easy access to all functionality through a simple command-line interface.
 """
 
 import argparse
-import logging
 import sys
+import os
 from pathlib import Path
-from typing import List, Optional
-import subprocess
-
-# Import our modules
-from src.pipeline.infer_page import PS05Pipeline, process_batch
-from src.evaluation.layout_evaluator import evaluate_layout
-from scripts.train_layout import main as train_layout
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-def run_inference(args):
-    """Run inference on document images."""
-    try:
-        pipeline = PS05Pipeline(args.config)
-        
-        if args.batch:
-            # Batch processing
-            image_paths = list(Path(args.input).glob("*.png")) + list(Path(args.input).glob("*.jpg"))
-            if not image_paths:
-                logger.error(f"No images found in {args.input}")
-                return
-            
-            logger.info(f"Processing {len(image_paths)} images in batch mode")
-            results = process_batch(
-                [str(p) for p in image_paths],
-                args.config,
-                args.stage,
-                args.output
-            )
-            
-            logger.info(f"Batch processing completed. Results saved to {args.output}")
-            
-        else:
-            # Single image processing
-            if not Path(args.input).exists():
-                logger.error(f"Input file not found: {args.input}")
-                return
-            
-            logger.info(f"Processing single image: {args.input}")
-            result = pipeline.process_image(args.input, args.stage)
-            
-            # Save result
-            Path(args.output).mkdir(parents=True, exist_ok=True)
-            output_path = Path(args.output) / "result.json"
-            
-            import json
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(result, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Processing completed. Result saved to {output_path}")
-            logger.info(f"Processing time: {result.get('processing_time', 0):.2f}s")
-            
-    except Exception as e:
-        logger.error(f"Inference failed: {e}")
-        sys.exit(1)
-
-def run_training(args):
-    """Run model training."""
-    try:
-        logger.info("Starting model training...")
-        
-        # Set up training arguments
-        sys.argv = [
-            'train_layout.py',
-            '--config', args.config,
-            '--data', args.data,
-            '--output', args.output,
-            '--epochs', str(args.epochs),
-            '--batch-size', str(args.batch_size)
-        ]
-        
-        if args.validate:
-            sys.argv.append('--validate')
-        
-        # Run training
-        train_layout()
-        
-    except Exception as e:
-        logger.error(f"Training failed: {e}")
-        sys.exit(1)
-
-def run_evaluation(args):
-    """Run model evaluation."""
-    try:
-        logger.info("Starting model evaluation...")
-        
-        # Load predictions and ground truth
-        import json
-        
-        with open(args.predictions, 'r') as f:
-            predictions = json.load(f)
-        
-        with open(args.ground_truth, 'r') as f:
-            ground_truth = json.load(f)
-        
-        # Run evaluation
-        results = evaluate_layout(predictions, ground_truth, args.output)
-        
-        logger.info("Evaluation completed successfully!")
-        logger.info(f"Results saved to {args.output}")
-        
-        # Print summary
-        if 'mAP' in results:
-            logger.info(f"Overall mAP: {results['mAP']:.3f}")
-        
-    except Exception as e:
-        logger.error(f"Evaluation failed: {e}")
-        sys.exit(1)
-
-def run_server(args):
-    """Run the FastAPI server."""
-    try:
-        import uvicorn
-        from backend.app.main import app
-        
-        logger.info(f"Starting PS-05 API server on {args.host}:{args.port}")
-        
-        uvicorn.run(
-            app,
-            host=args.host,
-            port=args.port,
-            reload=args.reload,
-            workers=args.workers
-        )
-        
-    except Exception as e:
-        logger.error(f"Server failed to start: {e}")
-        sys.exit(1)
 
 def main():
-    """Main CLI entry point."""
+    """Main entry point for PS-05 system."""
     parser = argparse.ArgumentParser(
-        description="PS-05 Intelligent Multilingual Document Understanding System",
+        description="PS-05 Document Understanding System - Main Entry Point",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Run inference on a single image
-  python ps05.py infer --input image.png --output results/ --stage 2
-  
-  # Process a batch of images
-  python ps05.py infer --input data/images/ --output results/ --batch --stage 3
-  
-  # Train the layout detection model
-  python ps05.py train --data data/train/ --output models/ --epochs 100
-  
-  # Evaluate model performance
-  python ps05.py eval --predictions preds.json --ground-truth gt.json --output eval_results.json
-  
-  # Start the API server
-  python ps05.py server --host 0.0.0.0 --port 8000
+EXAMPLES:
+  # Run the complete 3-stage pipeline
+  python ps05.py pipeline --stage all
+
+  # Run individual stages
+  python ps05.py pipeline --stage 1  # Layout detection
+  python ps05.py pipeline --stage 2  # Text extraction  
+  python ps05.py pipeline --stage 3  # Content understanding
+
+  # Data cleaning and EDA
+  python ps05.py clean --input data/train --output results/cleaned --mode cleaning_with_eda
+  python ps05.py clean --input data/train --output results/eda --mode eda_only
+
+  # Training pipeline
+  python ps05.py train --prepare-data --input data/train --output data/training_prepared
+  python ps05.py train --train-model
+
+  # Backend API
+  python ps05.py backend --start
+  python ps05.py backend --status
+
+  # Utilities
+  python ps05.py cleanup
+  python ps05.py pack-submission
         """
     )
     
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
-    # Inference command
-    infer_parser = subparsers.add_parser('infer', help='Run inference on documents')
-    infer_parser.add_argument('--input', required=True, help='Input image or directory')
-    infer_parser.add_argument('--output', default='outputs', help='Output directory')
-    infer_parser.add_argument('--config', default='configs/ps05_config.yaml', help='Configuration file')
-    infer_parser.add_argument('--stage', type=int, default=1, choices=[1, 2, 3], 
-                             help='Processing stage (1: Layout, 2: +OCR, 3: +NL)')
-    infer_parser.add_argument('--batch', action='store_true', help='Batch processing mode')
-    infer_parser.set_defaults(func=run_inference)
+    # Pipeline command
+    pipeline_parser = subparsers.add_parser('pipeline', help='Run the 3-stage pipeline')
+    pipeline_parser.add_argument('--stage', choices=['1', '2', '3', 'all'], 
+                                default='all', help='Pipeline stage to run')
+    pipeline_parser.add_argument('--input', default='data/test', 
+                                help='Input directory (default: data/test)')
+    pipeline_parser.add_argument('--output', default='results', 
+                                help='Output directory (default: results)')
+    
+    # Cleaning command
+    clean_parser = subparsers.add_parser('clean', help='Data cleaning and EDA')
+    clean_parser.add_argument('--input', required=True, help='Input data directory')
+    clean_parser.add_argument('--output', required=True, help='Output directory for results')
+    clean_parser.add_argument('--mode', choices=['eda_only', 'cleaning_with_eda'], 
+                             default='cleaning_with_eda', help='Cleaning mode')
+    clean_parser.add_argument('--dataset-type', choices=['auto', 'images', 'documents', 'mixed'],
+                             default='auto', help='Dataset type for cleaning')
     
     # Training command
-    train_parser = subparsers.add_parser('train', help='Train models')
-    train_parser.add_argument('--data', required=True, help='Training data directory')
-    train_parser.add_argument('--output', default='models', help='Output directory')
-    train_parser.add_argument('--config', default='configs/ps05_config.yaml', help='Configuration file')
-    train_parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
-    train_parser.add_argument('--batch-size', type=int, default=8, help='Batch size')
-    train_parser.add_argument('--validate', action='store_true', help='Run validation after training')
-    train_parser.set_defaults(func=run_training)
+    train_parser = subparsers.add_parser('train', help='Training pipeline')
+    train_parser.add_argument('--prepare-data', action='store_true', 
+                             help='Prepare training data')
+    train_parser.add_argument('--train-model', action='store_true', 
+                             help='Train YOLO model')
+    train_parser.add_argument('--input', help='Input data directory')
+    train_parser.add_argument('--output', help='Output directory')
     
-    # Evaluation command
-    eval_parser = subparsers.add_parser('eval', help='Evaluate model performance')
-    eval_parser.add_argument('--predictions', required=True, help='Predictions JSON file')
-    eval_parser.add_argument('--ground-truth', required=True, help='Ground truth JSON file')
-    eval_parser.add_argument('--output', required=True, help='Output results file')
-    eval_parser.set_defaults(func=run_evaluation)
+    # Backend command
+    backend_parser = subparsers.add_parser('backend', help='Backend API management')
+    backend_parser.add_argument('--start', action='store_true', 
+                               help='Start the backend server')
+    backend_parser.add_argument('--status', action='store_true', 
+                               help='Check backend status')
+    backend_parser.add_argument('--port', default=8000, type=int, 
+                               help='Port for backend server')
     
-    # Server command
-    server_parser = subparsers.add_parser('server', help='Start API server')
-    server_parser.add_argument('--host', default='0.0.0.0', help='Server host')
-    server_parser.add_argument('--port', type=int, default=8000, help='Server port')
-    server_parser.add_argument('--reload', action='store_true', help='Enable auto-reload')
-    server_parser.add_argument('--workers', type=int, default=1, help='Number of workers')
-    server_parser.set_defaults(func=run_server)
+    # Utilities command
+    utils_parser = subparsers.add_parser('utils', help='Utility functions')
+    utils_parser.add_argument('--cleanup', action='store_true', 
+                             help='Clean up repository')
+    utils_parser.add_argument('--pack-submission', action='store_true', 
+                             help='Pack submission files')
     
-    # Submission packager
-    pack_parser = subparsers.add_parser("pack", help="Create submission package (zip)")
-    pack_parser.add_argument("--input", required=True, help="Image file or directory")
-    pack_parser.add_argument("--output", required=True, help="Output directory")
-    pack_parser.add_argument("--stage", type=int, default=3, choices=[1,2,3])
-    pack_parser.add_argument("--zip-name", default="submission.zip")
-    pack_parser.add_argument("--config", default=None)
-
-    # Overlay viewer
-    overlay_parser = subparsers.add_parser("overlay", help="Create overlay image for QA")
-    overlay_parser.add_argument("--image", required=True)
-    overlay_parser.add_argument("--json", required=True)
-    overlay_parser.add_argument("--stage", type=int, default=3, choices=[1,2,3])
-    overlay_parser.add_argument("--out", required=True)
-
     # Parse arguments
     args = parser.parse_args()
     
@@ -227,29 +96,143 @@ Examples:
         parser.print_help()
         return
     
-    # Run the appropriate function
-    if args.command == "pack":
-        cmd = [
-            sys.executable, "scripts/pack_submission.py",
-            "--input", args.input,
-            "--output", args.output,
-            "--stage", str(args.stage),
-            "--zip-name", args.zip_name
+    # Execute commands
+    try:
+        if args.command == 'pipeline':
+            run_pipeline(args)
+        elif args.command == 'clean':
+            run_cleaning(args)
+        elif args.command == 'train':
+            run_training(args)
+        elif args.command == 'backend':
+            run_backend(args)
+        elif args.command == 'utils':
+            run_utilities(args)
+        else:
+            print(f"Unknown command: {args.command}")
+            parser.print_help()
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        sys.exit(1)
+
+def run_pipeline(args):
+    """Run the 3-stage pipeline."""
+    print(f"🚀 Running PS-05 Pipeline - Stage: {args.stage}")
+    
+    # Import and run the pipeline
+    try:
+        sys.path.append('scripts/core')
+        from run_stages import main as run_stages_main
+        
+        # Set up arguments for run_stages
+        sys.argv = [
+            'run_stages.py',
+            '--stage', args.stage,
+            '--input', args.input,
+            '--output', args.output
         ]
-        if args.config:
-            cmd.extend(["--config", args.config])
-        subprocess.run(cmd, check=True)
-    elif args.command == "overlay":
-        cmd = [
-            sys.executable, "scripts/overlay_viewer.py",
-            "--image", args.image,
-            "--json", args.json,
-            "--stage", str(args.stage),
-            "--out", args.out
+        
+        run_stages_main()
+        
+    except ImportError as e:
+        print(f"❌ Failed to import pipeline: {e}")
+        print("💡 Make sure you're in the project root directory")
+    except Exception as e:
+        print(f"❌ Pipeline execution failed: {e}")
+
+def run_cleaning(args):
+    """Run data cleaning and EDA."""
+    print(f"🧹 Running Data Cleaning - Mode: {args.mode}")
+    
+    try:
+        sys.path.append('scripts/cleaning')
+        from eda_with_cleaning import main as cleaning_main
+        
+        # Set up arguments for cleaning script
+        sys.argv = [
+            'eda_with_cleaning.py',
+            '--input', args.input,
+            '--output', args.output,
+            '--mode', args.mode,
+            '--dataset-type', args.dataset_type
         ]
-        subprocess.run(cmd, check=True)
-    else:
-        args.func(args)
+        
+        cleaning_main()
+        
+    except ImportError as e:
+        print(f"❌ Failed to import cleaning script: {e}")
+        print("💡 Make sure you're in the project root directory")
+    except Exception as e:
+        print(f"❌ Cleaning execution failed: {e}")
+
+def run_training(args):
+    """Run training pipeline."""
+    print("🎯 Running Training Pipeline")
+    
+    try:
+        if args.prepare_data:
+            print("📊 Preparing training data...")
+            sys.path.append('scripts/training')
+            from prepare_training_data import main as prep_main
+            
+            sys.argv = [
+                'prepare_training_data.py',
+                '--input', args.input or 'data/train',
+                '--output', args.output or 'data/training_prepared'
+            ]
+            prep_main()
+        
+        if args.train_model:
+            print("🏋️ Training YOLO model...")
+            sys.path.append('scripts/training')
+            from train_stage1 import main as train_main
+            
+            sys.argv = ['train_stage1.py']
+            train_main()
+            
+    except ImportError as e:
+        print(f"❌ Failed to import training script: {e}")
+        print("💡 Make sure you're in the project root directory")
+    except Exception as e:
+        print(f"❌ Training execution failed: {e}")
+
+def run_backend(args):
+    """Manage backend API."""
+    if args.start:
+        print("🚀 Starting PS-05 Backend Server...")
+        print(f"📡 Server will be available at: http://localhost:{args.port}")
+        print("💡 Use Ctrl+C to stop the server")
+        
+        try:
+            os.chdir('backend')
+            os.system(f'python -m uvicorn app.main:app --host 0.0.0.0 --port {args.port}')
+        except Exception as e:
+            print(f"❌ Failed to start backend: {e}")
+    
+    elif args.status:
+        print("📊 Backend Status:")
+        print("💡 To check status, start the backend first with: python ps05.py backend --start")
+
+def run_utilities(args):
+    """Run utility functions."""
+    if args.cleanup:
+        print("🧹 Running repository cleanup...")
+        try:
+            sys.path.append('scripts/utilities')
+            from cleanup import main as cleanup_main
+            cleanup_main()
+        except ImportError as e:
+            print(f"❌ Failed to import cleanup script: {e}")
+    
+    elif args.pack_submission:
+        print("📦 Packing submission files...")
+        try:
+            sys.path.append('scripts/utilities')
+            from pack_submission import main as pack_main
+            pack_main()
+        except ImportError as e:
+            print(f"❌ Failed to import pack script: {e}")
 
 if __name__ == "__main__":
     main() 

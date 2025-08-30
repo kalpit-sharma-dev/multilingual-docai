@@ -88,7 +88,9 @@ async def root():
             "get_predictions": "/predictions/{dataset_id}",
             "status": "/status",
             "clean_dataset": "/clean-dataset",
-            "cleaning_capabilities": "/cleaning-capabilities"
+            "cleaning_capabilities": "/cleaning-capabilities",
+            "run_eda": "/run-eda",
+            "eda_results": "/eda-results/{dataset_id}"
         }
     }
 
@@ -516,6 +518,116 @@ async def get_cleaning_status(dataset_id: str):
         return status
     except Exception as e:
         logger.error(f"Failed to get cleaning status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/run-eda")
+async def run_eda_analysis(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    dataset_name: Optional[str] = None
+):
+    """
+    Run EDA analysis on uploaded dataset.
+    
+    - files: List of files to analyze
+    - dataset_name: Optional name for the dataset
+    """
+    try:
+        # Generate dataset ID
+        dataset_id = str(uuid.uuid4())
+        dataset_dir = DATASET_STORAGE / dataset_id
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save uploaded files
+        total_size_bytes = 0
+        for file in files:
+            file_path = dataset_dir / file.filename
+            with open(file_path, "wb") as buffer:
+                content = file.file.read()
+                buffer.write(content)
+                total_size_bytes += len(content)
+        
+        # Save dataset info
+        dataset_info = {
+            "dataset_id": dataset_id,
+            "dataset_name": dataset_name or f"eda_dataset_{dataset_id[:8]}",
+            "num_files": len(files),
+            "total_size_bytes": total_size_bytes,
+            "total_size_gb": total_size_bytes / (1024**3),
+            "upload_timestamp": datetime.now().isoformat(),
+            "analysis_type": "eda_only"
+        }
+        
+        with open(dataset_dir / "dataset_info.json", "w") as f:
+            json.dump(dataset_info, f)
+        
+        # Start EDA analysis in background
+        background_tasks.add_task(
+            _run_eda_background,
+            dataset_id,
+            dataset_dir
+        )
+        
+        return {
+            "dataset_id": dataset_id,
+            "dataset_name": dataset_info["dataset_name"],
+            "num_files": len(files),
+            "total_size_gb": dataset_info["total_size_gb"],
+            "status": "eda_started",
+            "message": "EDA analysis started in background"
+        }
+        
+    except Exception as e:
+        logger.error(f"EDA analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def _run_eda_background(dataset_id: str, dataset_dir: Path):
+    """Background task for EDA analysis."""
+    try:
+        # Create output directory for EDA results
+        output_dir = RESULTS_STORAGE / dataset_id / "eda_results"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Run EDA analysis
+        from .services.unified_cleaning_service import UnifiedCleaningService
+        eda_service = UnifiedCleaningService()
+        
+        # Run EDA only (no cleaning)
+        eda_results = eda_service._run_eda_analysis(dataset_dir, "standalone")
+        
+        # Save EDA results
+        with open(output_dir / "eda_results.json", "w") as f:
+            json.dump(eda_results, f)
+        
+        logger.info(f"Dataset {dataset_id} EDA analysis completed")
+        
+    except Exception as e:
+        logger.error(f"Background EDA failed for {dataset_id}: {e}")
+
+@app.get("/eda-results/{dataset_id}")
+async def get_eda_results(dataset_id: str):
+    """Get EDA results for a specific dataset."""
+    try:
+        results_dir = RESULTS_STORAGE / dataset_id / "eda_results"
+        if not results_dir.exists():
+            raise HTTPException(status_code=404, detail="EDA results not found")
+        
+        # Load EDA results
+        eda_results_path = results_dir / "eda_results.json"
+        if eda_results_path.exists():
+            with open(eda_results_path, 'r') as f:
+                eda_results = json.load(f)
+            
+            return {
+                "dataset_id": dataset_id,
+                "eda_results": eda_results,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            raise HTTPException(status_code=404, detail="EDA results file not found")
+        
+    except Exception as e:
+        logger.error(f"Failed to get EDA results: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
