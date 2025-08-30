@@ -1,4 +1,9 @@
-# 🚀 PS-05 Document Understanding API Usage Guide
+# [DEPRECATED] PS-05 Document Understanding API Usage Guide
+
+This document is deprecated. Please refer to the canonical docs:
+- Main: `README.md`
+- Evaluation Day: `docs/EVALUATION_DAY_RUNBOOK.md`
+- Swagger (when running): http://localhost:8000/docs
 
 ## **Overview**
 This API provides a complete 3-stage document understanding pipeline:

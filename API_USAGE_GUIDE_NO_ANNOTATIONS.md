@@ -1,4 +1,9 @@
-# 🚀 PS-05 API Usage Guide: No-Annotation Evaluation
+# [DEPRECATED] PS-05 API Usage Guide: No-Annotation Evaluation
+
+This document is deprecated. Please refer to:
+- Main: `README.md`
+- Evaluation Day: `docs/EVALUATION_DAY_RUNBOOK.md`
+- Swagger (when running): http://localhost:8000/docs
 
 ## **Overview**
 This guide covers using the PS-05 API for **evaluator testing scenarios** where:

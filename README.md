@@ -6,6 +6,15 @@ Complete 3-stage document understanding pipeline optimized for **A100 GPU** with
 
 **✅ 100% Compliant with PS-05 Requirements Document!**
 
+## 📓 Start here (Canonical Docs)
+- Main guide: this `README.md` (setup, run, API, troubleshooting)
+- Evaluation-day runbook: `docs/EVALUATION_DAY_RUNBOOK.md`
+- Swagger UI (runtime): http://localhost:8000/docs
+- GPU deployment (compose): `docker-compose.gpu.yml`
+
+Notes:
+- Prefer this README and the runbook. Other markdown files are reference-only and marked deprecated to reduce confusion.
+
 **Key Features:**
 - **GPU Optimization**: Full A100 GPU acceleration with CUDA 12.1+
 - **Parallel Processing**: All 3 stages run simultaneously for maximum speed

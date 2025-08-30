@@ -1,4 +1,4 @@
-# 🧭 PS-05 Navigation Index
+# 🧭 PS-05 Navigation Index (Canonical)
 
 ## 🎯 **Quick Navigation Guide**
 
@@ -8,10 +8,10 @@ This index helps you quickly find what you need in the PS-05 project.
 
 | **What You Want** | **Main Command** | **Direct Script** | **Documentation** |
 |-------------------|------------------|-------------------|-------------------|
-| **Run Pipeline** | `python ps05.py pipeline` | `scripts/core/run_stages.py` | `README_QUICK_START.md` |
+| **Run Pipeline** | `python ps05.py pipeline` | `scripts/core/run_stages.py` | `README.md` |
 | **Clean Data** | `python ps05.py clean` | `scripts/cleaning/eda_with_cleaning.py` | `CLEANING_SERVICES_GUIDE.md` |
 | **Train Models** | `python ps05.py train` | `scripts/training/` | `README_QUICK_START.md` |
-| **Use API** | `python ps05.py backend` | `backend/app/main.py` | `API_USAGE_GUIDE.md` |
+| **Use API** | `python ps05.py backend` | `backend/app/main.py` | `README.md` |
 | **Utilities** | `python ps05.py utils` | `scripts/utilities/` | `CLEAN_REPOSITORY_GUIDE.md` |
 
 ## 📁 **Directory Quick Reference**
@@ -68,15 +68,15 @@ results/                 # Processing outputs
 
 ## 📚 **Documentation Map**
 
-### **📖 Getting Started**
-- **`README_MASTER.md`** - Complete project overview
-- **`README_QUICK_START.md`** - Quick start guide
+### **📖 Getting Started (Canonical)**
+- **`README.md`** - Main guide (start here)
+- **`docs/EVALUATION_DAY_RUNBOOK.md`** - Evaluation-day runbook
 - **`PROJECT_STRUCTURE.md`** - High-level organization
 
-### **🔧 How-To Guides**
+### **🔧 How-To Guides (Reference)**
 - **`CLEANING_SERVICES_GUIDE.md`** - Cleaning services usage
 - **`EDA_CLEANING_INTEGRATION_GUIDE.md`** - EDA integration
-- **`API_USAGE_GUIDE.md`** - API usage and examples
+- ~~`API_USAGE_GUIDE.md`~~ - Deprecated (see `README.md`)
 
 ### **📁 Reference**
 - **`DIRECTORY_STRUCTURE.md`** - Detailed file layout
