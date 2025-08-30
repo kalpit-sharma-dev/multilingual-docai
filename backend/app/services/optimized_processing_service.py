@@ -27,6 +27,7 @@ import easyocr
 import fasttext
 from PIL import Image
 import cv2
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -100,12 +101,9 @@ class OptimizedProcessingService:
             
             # LayoutLMv3 for fine-grained classification
             logger.info("Loading LayoutLMv3...")
-            models['layoutlmv3'] = LayoutLMv3ForSequenceClassification.from_pretrained(
-                "microsoft/layoutlmv3-base"
-            )
-            models['layoutlmv3_processor'] = LayoutLMv3Processor.from_pretrained(
-                "microsoft/layoutlmv3-base"
-            )
+            layoutlm_ckpt = os.environ.get("LAYOUTLMV3_CHECKPOINT", "microsoft/layoutlmv3-base")
+            models['layoutlmv3'] = LayoutLMv3ForSequenceClassification.from_pretrained(layoutlm_ckpt)
+            models['layoutlmv3_processor'] = LayoutLMv3Processor.from_pretrained(layoutlm_ckpt)
             if self.device == "cuda":
                 models['layoutlmv3'].to(self.device)
             
@@ -137,6 +135,117 @@ class OptimizedProcessingService:
             raise
         
         return models
+
+    def _convert_quad_to_hbb_xyhw(self, quad: Any) -> List[int]:
+        """Convert a 4-point quadrilateral to HBB in [x, y, h, w] order.
+        EasyOCR returns [[x1,y1],[x2,y2],[x3,y3],[x4,y4]].
+        """
+        try:
+            xs = [p[0] for p in quad]
+            ys = [p[1] for p in quad]
+            min_x, max_x = int(min(xs)), int(max(xs))
+            min_y, max_y = int(min(ys)), int(max(ys))
+            w = max_x - min_x
+            h = max_y - min_y
+            if w < 0: w = 0
+            if h < 0: h = 0
+            return [min_x, min_y, h, w]
+        except Exception:
+            # Fallback safe box
+            return [0, 0, 0, 0]
+
+    def _caption_from_pil(self, pil_image: Image.Image) -> str:
+        """Generate a caption using BLIP-2 for a given PIL image region."""
+        try:
+            inputs = self.models['blip2_processor'](pil_image, return_tensors="pt")
+            if self.device == "cuda":
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = self.models['blip2'].generate(**inputs, max_length=100)
+                description = self.models['blip2_processor'].decode(outputs[0], skip_special_tokens=True)
+            return description
+        except Exception as e:
+            logger.warning(f"Caption generation failed: {e}")
+            return ""
+
+    def _sort_text_elements_reading_order(self, text_elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Sort text elements in reading order (top-to-bottom, then left-to-right)."""
+        try:
+            ordered = sorted(text_elements, key=lambda e: (e.get('bbox', [0, 0, 0, 0])[1], e.get('bbox', [0, 0, 0, 0])[0]))
+            for idx, el in enumerate(ordered):
+                el['order'] = idx
+            return ordered
+        except Exception:
+            return text_elements
+
+    def _refine_layout_with_layoutlm(self, image_bgr: np.ndarray, layout_elements: List[Dict[str, Any]], text_elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Optionally refine YOLO labels using LayoutLMv3 if a 6-class head is available.
+        This is safe: if num_labels != 6 or processor/model missing, returns original labels.
+        """
+        try:
+            model = self.models.get('layoutlmv3')
+            processor = self.models.get('layoutlmv3_processor')
+            if model is None or processor is None:
+                return layout_elements
+            if getattr(model.config, 'num_labels', 0) != 6:
+                # Not a 6-class head -> skip refinement
+                return layout_elements
+            id2label = getattr(model.config, 'id2label', {i: l for i, l in enumerate(['Background','Text','Title','List','Table','Figure'])})
+
+            h_img, w_img = image_bgr.shape[:2]
+            pil_full = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
+
+            refined = []
+            for el in layout_elements:
+                x, y, h, w = el.get('bbox', [0, 0, 0, 0])
+                crop = image_bgr[y:y+h, x:x+w]
+                if crop is None or crop.size == 0:
+                    refined.append(el)
+                    continue
+                pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+
+                # Collect OCR words inside this region
+                words, boxes = [], []
+                for te in text_elements:
+                    bx = te.get('bbox', [0, 0, 0, 0])
+                    tx, ty, th, tw = bx
+                    if tx >= x and ty >= y and tx + tw <= x + w and ty + th <= y + h:
+                        if te.get('text'):
+                            words.append(te['text'])
+                            # Normalize to 0-1000 per LayoutLM convention
+                            bxn = int(((tx - x) / max(w, 1)) * 1000)
+                            byn = int(((ty - y) / max(h, 1)) * 1000)
+                            bwn = int((tw / max(w, 1)) * 1000)
+                            bhn = int((th / max(h, 1)) * 1000)
+                            boxes.append([bxn, byn, bxn + bwn, byn + bhn])
+
+                if not words:
+                    refined.append(el)
+                    continue
+
+                encoded = processor(images=pil_crop, words=[words], boxes=[boxes], return_tensors="pt", truncation=True, padding=True)
+                if self.device == 'cuda':
+                    encoded = {k: v.to(self.device) for k, v in encoded.items()}
+                with torch.no_grad():
+                    logits = model(**encoded).logits
+                    probs = torch.softmax(logits, dim=-1).squeeze(0)
+                    conf, pred = torch.max(probs, dim=-1)
+                    conf_val = float(conf.item())
+                    pred_label = id2label.get(int(pred.item()), el.get('type'))
+                # Only override if confident
+                if conf_val >= 0.8:
+                    el_ref = dict(el)
+                    el_ref['type'] = pred_label
+                    el_ref['refined_by'] = 'layoutlmv3'
+                    el_ref['refine_confidence'] = conf_val
+                    refined.append(el_ref)
+                else:
+                    refined.append(el)
+
+            return refined
+        except Exception as e:
+            logger.warning(f"LayoutLMv3 refinement skipped: {e}")
+            return layout_elements
     
     def _preprocess_image(self, image: np.ndarray) -> np.ndarray:
         """
@@ -325,9 +434,10 @@ class OptimizedProcessingService:
                         class_labels = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
                         label = class_labels[min(class_id, len(class_labels) - 1)]
                         
+                        # Standardize to [x, y, h, w]
                         layout_elements.append({
                             "type": label,
-                            "bbox": [int(x1), int(y1), int(x2-x1), int(y2-y1)],  # [x, y, w, h] format
+                            "bbox": [int(x1), int(y1), int(y2 - y1), int(x2 - x1)],
                             "confidence": float(confidence)
                         })
             
@@ -364,13 +474,17 @@ class OptimizedProcessingService:
                         # Map to closest target language
                         language = 'en'  # Default to English
                     
+                    # Convert EasyOCR quad bbox to HBB [x, y, h, w]
+                    hbb_xyhw = self._convert_quad_to_hbb_xyhw(bbox)
                     text_elements.append({
                         "text": text,
-                        "bbox": bbox,
+                        "bbox": hbb_xyhw,
                         "confidence": confidence,
                         "language": language
                     })
             
+            # Order text in reading sequence
+            text_elements = self._sort_text_elements_reading_order(text_elements)
             return {"text_elements": text_elements}
             
         except Exception as e:
@@ -420,15 +534,26 @@ class OptimizedProcessingService:
         elements = []
         
         # Add layout elements (Stage 1)
-        for element in stage1_result.get("layout_elements", []):
+        stage1_layout = stage1_result.get("layout_elements", [])
+        stage2_text = stage2_result.get("text_elements", [])
+
+        # Optional refinement using LayoutLMv3 if fine-tuned 6-class head is available
+        try:
+            base_img = cv2.imread(image_file)
+            if base_img is not None:
+                stage1_layout = self._refine_layout_with_layoutlm(base_img, stage1_layout, stage2_text)
+        except Exception as e:
+            logger.warning(f"Layout refinement error: {e}")
+
+        for element in stage1_layout:
             elements.append({
                 "type": element["type"],
-                "bbox": element["bbox"],  # [x, y, w, h] format as per requirements
+                "bbox": element["bbox"],  # standardized [x, y, h, w]
                 "confidence": element["confidence"]
             })
         
         # Add text elements (Stage 2)
-        for element in stage2_result.get("text_elements", []):
+        for element in stage2_text:
             elements.append({
                 "type": "Text",
                 "bbox": element["bbox"],
@@ -437,7 +562,24 @@ class OptimizedProcessingService:
                 "confidence": element["confidence"]
             })
         
-        # Add content description (Stage 3)
+        # Add per-element captions for Table and Figure using BLIP-2 on cropped regions
+        try:
+            base_image = cv2.imread(image_file)
+            if base_image is not None:
+                for el in elements:
+                    if el.get("type") in ["Table", "Figure"] and isinstance(el.get("bbox"), list):
+                        x, y, h, w = el["bbox"]
+                        if w > 0 and h > 0:
+                            crop = base_image[y:y+h, x:x+w]
+                            if crop is not None and crop.size > 0:
+                                pil_crop = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+                                desc = self._caption_from_pil(pil_crop)
+                                if desc:
+                                    el["description"] = desc
+        except Exception as e:
+            logger.warning(f"Per-element captioning failed: {e}")
+
+        # Optionally keep whole-image content description
         if stage3_result.get("description"):
             elements.append({
                 "type": "Content",
