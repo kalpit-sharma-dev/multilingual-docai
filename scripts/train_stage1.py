@@ -24,7 +24,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.prepare_dataset import prepare_dataset
-from src.models.layout_detector import LayoutDetector
+# from src.models.layout_detector import LayoutDetector  # Commented out for now
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

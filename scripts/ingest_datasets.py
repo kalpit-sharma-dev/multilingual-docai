@@ -66,8 +66,8 @@ class DatasetIngester:
     def _download_doclaynet_hf(self, output_dir: Path) -> bool:
         """Download DocLayNet using Hugging Face datasets."""
         try:
-            # Load the dataset
-            dataset = load_dataset("ds4sd/DocLayNet")
+            # Load the dataset with trust_remote_code
+            dataset = load_dataset("ds4sd/DocLayNet", trust_remote_code=True)
             
             # Save to disk
             dataset.save_to_disk(output_dir / "hf_dataset")
