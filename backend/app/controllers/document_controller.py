@@ -4,16 +4,16 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 
-from app.database.database import get_db
-from app.services.document_service import DocumentService
-from app.services.file_manager import FileManager
-from app.models.schemas import (
+from ..database.database import get_db
+from ..services.document_service import DocumentService
+from ..services.file_manager import FileManager
+from ..models.schemas import (
     DocumentUploadRequest, DocumentResponse, BatchProcessingRequest, 
     BatchProcessingResponse, ProcessingStage, ProcessingStatus,
     HealthResponse, InfoResponse, SystemMetricsResponse
 )
-from app.config.settings import settings
-from app.models.document_model import Document
+from ..config.settings import settings
+from ..models.document_model import Document
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

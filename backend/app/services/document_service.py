@@ -8,14 +8,14 @@ import uuid
 import os
 from pathlib import Path
 
-from app.models.document_model import Document, ProcessingJob, ProcessingResult as DBProcessingResult
-from app.models.schemas import (
+from ..models.document_model import Document, ProcessingJob, ProcessingResult as DBProcessingResult
+from ..models.schemas import (
     ProcessingResult, DocumentResponse, ProcessingStage, ProcessingStatus,
     BatchProcessingRequest, BatchProcessingResponse, LayoutElement, PreprocessingInfo, TextLine, TableResult, ChartResult, FigureResult, MapResult
 )
-from app.services.document_processor import DocumentProcessor
-from app.services.file_manager import FileManager
-from app.config.settings import settings
+from .document_processor import DocumentProcessor
+from .file_manager import FileManager
+from ..config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ class DocumentService:
         """Background document processing task."""
         try:
             # Get database session
-            from app.database.database import get_db_context
+            from ..database.database import get_db_context
             
             with get_db_context() as db:
                 # Get document

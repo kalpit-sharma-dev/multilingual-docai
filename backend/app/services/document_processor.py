@@ -9,11 +9,11 @@ import uuid
 import os
 from pathlib import Path
 import logging
-from app.models.schemas import (
+from ..models.schemas import (
     ProcessingResult, LayoutElement, TextLine, TableResult, 
     ChartResult, FigureResult, MapResult, PreprocessingInfo
 )
-from app.config.settings import settings
+from ..config.settings import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -9,7 +9,7 @@ from fastapi import UploadFile, HTTPException
 from PIL import Image
 import cv2
 import numpy as np
-from app.config.settings import settings
+from ..config.settings import settings
 
 logger = logging.getLogger(__name__)
 

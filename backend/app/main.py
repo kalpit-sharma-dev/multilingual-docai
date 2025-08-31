@@ -44,8 +44,8 @@ try:  # typing guard for editors; does nothing at runtime if missing
         from .services.stage_processor import StageProcessor
         from .services.evaluation_service import EvaluationService
         from .services.unified_cleaning_service import UnifiedCleaningService
-        from app.services.gpu_training_service import GPUTrainingService, TrainingConfig
-        from app.services.optimized_processing_service import OptimizedProcessingService, ProcessingConfig
+        from .services.gpu_training_service import GPUTrainingService, TrainingConfig
+        from .services.optimized_processing_service import OptimizedProcessingService, ProcessingConfig
 except Exception:
     pass
 
@@ -118,7 +118,7 @@ def get_gpu_training_service():
     global gpu_training_service
     if gpu_training_service is None:
         try:
-            from app.services.gpu_training_service import GPUTrainingService
+            from .services.gpu_training_service import GPUTrainingService
             gpu_training_service = GPUTrainingService()
         except Exception as e:
             logging.getLogger(__name__).warning(f"GPUTrainingService unavailable: {e}")
@@ -128,7 +128,7 @@ def get_gpu_training_service():
 
 def create_optimized_service(config=None):
     try:
-        from app.services.optimized_processing_service import OptimizedProcessingService
+        from .services.optimized_processing_service import OptimizedProcessingService
         return OptimizedProcessingService(config)
     except Exception as e:
         logging.getLogger(__name__).error(f"OptimizedProcessingService unavailable: {e}")
@@ -315,7 +315,7 @@ async def process_stage(
             raise HTTPException(status_code=404, detail="Dataset not found")
         
         # Configure optimization
-        from app.services.optimized_processing_service import ProcessingConfig  # type: ignore
+        from .services.optimized_processing_service import ProcessingConfig  # type: ignore
         config = ProcessingConfig(
             batch_size=batch_size,
             gpu_acceleration=gpu_acceleration,
@@ -388,7 +388,7 @@ async def process_all_stages(
             raise HTTPException(status_code=404, detail="Dataset not found")
         
         # Configure for maximum speed
-        from app.services.optimized_processing_service import ProcessingConfig  # type: ignore
+        from .services.optimized_processing_service import ProcessingConfig  # type: ignore
         config = ProcessingConfig(
             batch_size=batch_size,
             max_workers=max_workers,
@@ -806,7 +806,7 @@ async def train_layout_model(
     """
     try:
         # Configure training
-        from app.services.gpu_training_service import TrainingConfig, GPUTrainingService  # type: ignore
+        from .services.gpu_training_service import TrainingConfig, GPUTrainingService  # type: ignore
         config = TrainingConfig(
             epochs=epochs,
             batch_size=batch_size,
@@ -851,7 +851,7 @@ async def train_yolo_model(
     """
     try:
         # Configure training
-        from app.services.gpu_training_service import TrainingConfig, GPUTrainingService  # type: ignore
+        from .services.gpu_training_service import TrainingConfig, GPUTrainingService  # type: ignore
         config = TrainingConfig(
             epochs=epochs,
             batch_size=batch_size,

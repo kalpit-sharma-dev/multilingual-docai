@@ -5,7 +5,7 @@ from sqlalchemy.pool import StaticPool
 from contextlib import contextmanager
 import os
 from typing import Generator
-from app.config.settings import settings
+from ..config.settings import settings
 
 # Create database engine
 if settings.DATABASE_URL.startswith("sqlite"):
@@ -62,4 +62,4 @@ def init_db():
     print("Database tables created successfully!")
 
 # Import all models to ensure they are registered
-from app.models.document_model import Document, ProcessingJob, ProcessingResult, SystemMetrics
+from ..models.document_model import Document, ProcessingJob, ProcessingResult, SystemMetrics

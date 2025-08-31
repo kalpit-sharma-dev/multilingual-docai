@@ -5,7 +5,7 @@
 FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
 
 # Build args to control optional large model fetches during build
-ARG INCLUDE_BLIP2=0
+ARG INCLUDE_BLIP2=1
 ARG PREFETCH_PADDLEOCR=1
 
 # Set environment variables for optimization
@@ -108,10 +108,24 @@ RUN if [ "$INCLUDE_BLIP2" = "1" ]; then \
 # Copy any provided local models over (overrides)
 COPY models/ ./models/
 
-# EasyOCR: set model directory; to operate fully offline, place EasyOCR weights under models/easyocr before build
+# EasyOCR: set model directory; prefetch into image
 ENV EASYOCR_MODEL_PATH=/app/models/easyocr
-# Optional: install PaddleOCR; to operate fully offline, ensure PaddleOCR weights cached in image or mount
-RUN python3.11 -m pip install --no-cache-dir paddleocr==2.7.0.3 || true
+RUN HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python3.11 - <<'PY'
+import easyocr
+easyocr.Reader(['en','hi','ur','ar','ne','fa'], gpu=False, model_storage_directory='/app/models/easyocr', download_enabled=True)
+print('EasyOCR cache prepared')
+PY
+
+# PaddleOCR: install and prefetch English models
+RUN python3.11 -m pip install --no-cache-dir paddleocr==2.7.0.3
+RUN python3.11 - <<'PY'
+try:
+    from paddleocr import PaddleOCR
+    PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)
+    print('PaddleOCR cache prepared')
+except Exception as e:
+    print('PaddleOCR prefetch skipped:', e)
+PY
 
 # Set permissions
 RUN chmod +x ps05.py
