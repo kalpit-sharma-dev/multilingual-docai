@@ -16,6 +16,14 @@ services:
       - TRANSFORMERS_CACHE=/app/models
       - HF_HOME=/app/models
       - MPLCONFIGDIR=/tmp
+      - HF_HUB_OFFLINE=0
+      - TRANSFORMERS_OFFLINE=0
+      # Optional specialized models
+      - LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class
+      - CHART_CAPTION_CHECKPOINT=/app/models/pix2struct-chart
+      - TABLE_T2T_CHECKPOINT=/app/models/table-t2t
+      # Optional OCR engine selection
+      - USE_PADDLEOCR=0
       - CUDA_LAUNCH_BLOCKING=0
       - TORCH_CUDNN_V8_API_ENABLED=1
       - TORCH_CUDNN_V8_API_DISABLED=0
@@ -79,6 +87,8 @@ services:
       - ./logs:/app/logs
       - ./backend:/app/backend
       - ./scripts:/app/scripts
+      - ./data/api_datasets:/app/data/api_datasets
+      - ./data/api_results:/app/data/api_results
       # Example: mount a specific evaluation dataset (read-only)
       # - /data/ps05_eval/<DATASET_ID>/images:/app/data/api_datasets/<DATASET_ID>/images:ro
       # Example: persist API-managed datasets/results on host (optional)

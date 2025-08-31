@@ -1,7 +1,12 @@
 # GPU-Optimized Dockerfile for PS-05 Challenge (A100 GPU)
 # Optimized for Ubuntu 24.04, 48-core CPU, 256GB RAM, A100 GPU
 
-FROM nvidia/cuda:12.1-devel-ubuntu24.04
+# Use a widely available CUDA 12.1 devel image (Ubuntu 22.04)
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+
+# Build args to control optional large model fetches during build
+ARG INCLUDE_BLIP2=0
+ARG PREFETCH_PADDLEOCR=1
 
 # Set environment variables for optimization
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,8 +18,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV TRANSFORMERS_CACHE=/app/models
 ENV HF_HOME=/app/models
 ENV MPLCONFIGDIR=/tmp
-ENV HF_HUB_OFFLINE=0
-ENV TRANSFORMERS_OFFLINE=0
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -28,15 +33,12 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     pkg-config \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    libgcc-s1 \
-    libstdc++6 \
-    libc6 \
     libtesseract-dev \
     tesseract-ocr \
     tesseract-ocr-eng \
@@ -45,42 +47,13 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr-ara \
     tesseract-ocr-nep \
     tesseract-ocr-fas \
-    libpoppler-cpp-dev \
     poppler-utils \
-    libmagickwand-dev \
     imagemagick \
     ffmpeg \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libavutil-dev \
-    libavfilter-dev \
-    libavdevice-dev \
-    libpostproc-dev \
-    libswresample-dev \
-    libx264-dev \
-    libx265-dev \
-    libvpx-dev \
-    libmp3lame-dev \
-    libopus-dev \
-    libvorbis-dev \
-    libtheora-dev \
-    libxvid-dev \
-    libxvidcore-dev \
-    libxvidcore4 \
-    libxvidcore4-dev \
-    libxvidcore4-dbg \
-    libxvidcore4-doc \
-    libxvidcore4-utils \
-    libxvidcore4-dev \
-    libxvidcore4-dbg \
-    libxvidcore4-doc \
-    libxvidcore4-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symbolic links for Python
-RUN ln -s /usr/bin/python3.11 /usr/bin/python
-RUN ln -s /usr/bin/python3.11 /usr/bin/python3
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python
 
 # Set working directory
 WORKDIR /app
@@ -89,17 +62,13 @@ WORKDIR /app
 COPY requirements_gpu_optimized.txt .
 
 # Install Python dependencies with GPU optimization
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip3 install --no-cache-dir -r requirements_gpu_optimized.txt
+# Ensure pip is installed for Python 3.11 and install deps into 3.11 site-packages
+RUN python3.11 -m ensurepip --upgrade || true
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN python3.11 -m pip install --no-cache-dir -r requirements_gpu_optimized.txt
 
-# Install additional GPU-optimized packages
-RUN pip3 install --no-cache-dir \
-    torch-tensorrt \
-    apex \
-    nvidia-apex \
-    nvidia-dali-cuda120 \
-    nvidia-ml-py3 \
-    pynvml
+# Optional GPU extras removed for compatibility; core GPU deps come from requirements
+# (torch/cu121, torchvision, torchaudio). Install NVML bindings only via requirements file.
 
 # Pre-fetch fastText model for language ID to avoid first-run delay
 RUN curl -L -o /app/lid.176.bin https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin
@@ -110,9 +79,39 @@ COPY scripts/ ./scripts/
 COPY ps05.py ./
 
 # Create necessary directories
-RUN mkdir -p datasets results logs models
+RUN mkdir -p datasets results logs models data/api_datasets data/api_results models/easyocr
 ## Include pre-fetched models in the image if present at build time
 COPY models/ ./models/
+
+# Pre-fetch HuggingFace models for offline use (can be skipped if models mounted)
+# These steps rely on internet during build; set HF_HOME to /app/models to cache inside image
+ENV HF_HOME=/app/models
+ENV TRANSFORMERS_CACHE=/app/models
+# Copy and run fetch_models to populate models into image (BLIP-2 optional via INCLUDE_BLIP2)
+COPY scripts/utilities/fetch_models.py /app/scripts/utilities/fetch_models.py
+RUN if [ "$INCLUDE_BLIP2" = "1" ]; then \
+      HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python3.11 /app/scripts/utilities/fetch_models.py --target /app/models \
+        --layoutlm microsoft/layoutlmv3-base \
+        --pix2struct google/pix2struct-textcaps-base \
+        --table google/flan-t5-small ; \
+    else \
+      HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python3.11 /app/scripts/utilities/fetch_models.py --target /app/models \
+        --layoutlm microsoft/layoutlmv3-base \
+        --pix2struct google/pix2struct-textcaps-base \
+        --table google/flan-t5-small \
+        --skip-blip2 ; \
+    fi
+
+# Ensure yolov8x weights embedded if provided under models/ on build context
+# (Place yolov8x.pt in ./models before building to bake it into the image.)
+
+# Copy any provided local models over (overrides)
+COPY models/ ./models/
+
+# EasyOCR: set model directory; to operate fully offline, place EasyOCR weights under models/easyocr before build
+ENV EASYOCR_MODEL_PATH=/app/models/easyocr
+# Optional: install PaddleOCR; to operate fully offline, ensure PaddleOCR weights cached in image or mount
+RUN python3.11 -m pip install --no-cache-dir paddleocr==2.7.0.3 || true
 
 # Set permissions
 RUN chmod +x ps05.py
@@ -180,9 +179,16 @@ ENV TORCH_CUDNN_V8_API_DISABLED_FOR_TQDM=0
 ENV TORCH_CUDNN_V8_API_DISABLED_FOR_CLICK=0
 ENV TORCH_CUDNN_V8_API_DISABLED_FOR_RICH=0
 
+# Default model checkpoint envs inside image (can be overridden at run-time)
+ENV YOLO_WEIGHTS=/app/models/yolov8x.pt
+ENV LAYOUTLMV3_CHECKPOINT=/app/models/layoutlmv3-6class
+ENV BLIP2_CHECKPOINT=/app/models/blip2-opt-2.7b
+ENV CHART_CAPTION_CHECKPOINT=/app/models/pix2struct-chart
+ENV TABLE_T2T_CHECKPOINT=/app/models/table-t2t
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command
-CMD ["python", "ps05.py", "backend", "--start", "--host", "0.0.0.0", "--port", "8000"]
+# Default command (serve FastAPI)
+CMD ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

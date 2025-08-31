@@ -96,7 +96,8 @@ class OptimizedProcessingService:
         try:
             # Stage 1: Layout Detection (GPU optimized)
             logger.info("Loading YOLOv8x for layout detection...")
-            models['yolo'] = YOLO('yolov8x.pt')
+            yolo_weights = os.environ.get("YOLO_WEIGHTS", "/app/models/yolov8x.pt")
+            models['yolo'] = YOLO(yolo_weights)
             if self.device == "cuda":
                 models['yolo'].to(self.device)
             
@@ -110,7 +111,13 @@ class OptimizedProcessingService:
             
             # Stage 2: OCR and Language Detection
             logger.info("Loading EasyOCR...")
-            models['ocr'] = easyocr.Reader(['en', 'hi', 'ur', 'ar', 'ne', 'fa'], gpu=self.device=="cuda")
+            easyocr_dir = os.environ.get("EASYOCR_MODEL_PATH", "/app/models/easyocr")
+            models['ocr'] = easyocr.Reader(
+                ['en', 'hi', 'ur', 'ar', 'ne', 'fa'],
+                gpu=(self.device=="cuda"),
+                model_storage_directory=easyocr_dir,
+                download_enabled=False
+            )
             # Optional: PaddleOCR as primary (enabled when USE_PADDLEOCR=1)
             try:
                 if os.environ.get("USE_PADDLEOCR", "0") == "1":
@@ -132,8 +139,9 @@ class OptimizedProcessingService:
             # Stage 3: Content Understanding
             logger.info("Loading BLIP-2 for image captioning...")
             from transformers import Blip2Processor, Blip2ForConditionalGeneration
-            models['blip2_processor'] = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-            models['blip2'] = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b")
+            blip2_ckpt = os.environ.get("BLIP2_CHECKPOINT", "Salesforce/blip2-opt-2.7b")
+            models['blip2_processor'] = Blip2Processor.from_pretrained(blip2_ckpt)
+            models['blip2'] = Blip2ForConditionalGeneration.from_pretrained(blip2_ckpt)
             if self.device == "cuda":
                 models['blip2'].to(self.device)
             

@@ -906,19 +906,48 @@ async def get_processing_stats():
     Get current processing statistics and GPU usage.
     """
     try:
-        # Create on demand to avoid heavy imports at startup
-        service = create_optimized_service()
-        stats = service.get_processing_stats()
+        # Prefer full stats when heavy deps are available
+        try:
+            service = create_optimized_service()
+            stats = service.get_processing_stats()
+            return {
+                "status": "success",
+                "stats": stats,
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as svc_err:
+            # Lightweight fallback: report device and (if available) GPU basics without loading models
+            logger.warning(f"OptimizedProcessingService unavailable, returning lightweight stats: {svc_err}")
+            fallback_stats = {}
+            try:
+                import torch  # local import to avoid hard dependency at startup
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                fallback_stats["device"] = device
+                if device == "cuda":
+                    fallback_stats.update({
+                        "gpu_name": torch.cuda.get_device_name(),
+                        "gpu_memory_total_gb": torch.cuda.get_device_properties(0).total_memory / 1e9,
+                        "gpu_memory_allocated_gb": torch.cuda.memory_allocated() / 1e9,
+                        "gpu_memory_cached_gb": torch.cuda.memory_reserved() / 1e9
+                    })
+            except Exception as torch_err:
+                fallback_stats["device"] = "unknown"
+                logger.warning(f"Torch not available for stats: {torch_err}")
+            return {
+                "status": "degraded",
+                "stats": fallback_stats,
+                "message": "Optimized processing service unavailable. Returning lightweight stats.",
+                "timestamp": datetime.now().isoformat()
+            }
+    except HTTPException as he:
+        # Even in HTTP errors, try to return a degraded response instead of failing hard
+        logger.warning(f"HTTP error in processing-stats: {he.detail}")
         return {
-            "status": "success",
-            "stats": stats,
+            "status": "degraded",
+            "stats": {},
+            "message": he.detail,
             "timestamp": datetime.now().isoformat()
         }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"Error getting processing stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():
