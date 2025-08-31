@@ -40,8 +40,6 @@ servers:
     description: Local Development Server
   - url: https://api.ps05-docai.com
     description: Production Server
-  - url: http://localhost:8000/docs
-    description: Interactive API Documentation (Swagger UI)
 
 tags:
   - name: Core Pipeline
@@ -264,16 +262,42 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/ProcessingRequest'
+              type: object
+              required:
+                - dataset_id
+                - stage
+              properties:
+                dataset_id:
+                  type: string
+                  description: ID of the dataset to process
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+                stage:
+                  type: integer
+                  description: Stage to process (1, 2, or 3)
+                  enum: [1, 2, 3]
+                  example: 1
+                optimization_level:
+                  type: string
+                  description: Optimization preference
+                  enum: [speed, memory]
+                  default: speed
+                batch_size:
+                  type: integer
+                  description: Images per batch
+                  default: 50
+                gpu_acceleration:
+                  type: boolean
+                  description: Enable GPU acceleration
+                  default: true
       responses:
         '200':
           description: Stage processed successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StageResult'
+                $ref: '#/components/schemas/ProcessStageResponse'
         '400':
           description: Bad request (invalid stage or dataset)
           content:
@@ -321,26 +345,44 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
               type: object
+              required:
+                - dataset_id
               properties:
                 dataset_id:
                   type: string
-                  format: uuid
                   description: ID of the dataset to process
                   example: "123e4567-e89b-12d3-a456-426614174000"
-                config:
-                  type: object
-                  description: Optional configuration parameters
-                  additionalProperties: true
+                parallel_processing:
+                  type: boolean
+                  description: Run stages in parallel
+                  default: true
+                max_workers:
+                  type: integer
+                  description: Number of parallel workers
+                  default: 8
+                gpu_acceleration:
+                  type: boolean
+                  description: Enable GPU acceleration
+                  default: true
+                batch_size:
+                  type: integer
+                  description: Images per batch
+                  default: 50
+                optimization_level:
+                  type: string
+                  description: Optimization preference
+                  enum: [speed, memory]
+                  default: speed
       responses:
         '200':
           description: Processing started successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProcessingResponse'
+                $ref: '#/components/schemas/ProcessAllResponse'
         '400':
           description: Bad request (invalid dataset)
           content:
@@ -385,18 +427,14 @@ paths:
         - Quality assurance
         - Research validation
       operationId: evaluateDataset
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                dataset_id:
-                  type: string
-                  format: uuid
-                  description: ID of the dataset to evaluate
-                  example: "123e4567-e89b-12d3-a456-426614174000"
+      parameters:
+        - name: dataset_id
+          in: query
+          required: true
+          description: ID of the dataset to evaluate
+          schema:
+            type: string
+            example: "123e4567-e89b-12d3-a456-426614174000"
       responses:
         '200':
           description: Evaluation completed successfully
@@ -476,6 +514,284 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /results/{dataset_id}:
+    get:
+      tags:
+        - Processing
+      summary: Get Processing Results
+      description: Get processing results for a dataset
+      operationId: getResults
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Results retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Results not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /datasets:
+    get:
+      tags:
+        - Dataset Management
+      summary: List Datasets
+      description: List all uploaded datasets
+      operationId: listDatasets
+      responses:
+        '200':
+          description: Datasets listed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datasets:
+                    type: array
+                    items:
+                      type: object
+
+  /datasets/{dataset_id}:
+    delete:
+      tags:
+        - Dataset Management
+      summary: Delete Dataset
+      description: Delete a dataset and its results
+      operationId: deleteDataset
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Dataset deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleaning-capabilities:
+    get:
+      tags:
+        - Data Cleaning
+      summary: Cleaning Capabilities
+      description: Get available cleaning capabilities
+      operationId: cleaningCapabilities
+      responses:
+        '200':
+          description: Capabilities retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /cleaning-status/{dataset_id}:
+    get:
+      tags:
+        - Data Cleaning
+      summary: Cleaning Status
+      description: Get cleaning status for a dataset
+      operationId: cleaningStatus
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /eda-results/{dataset_id}:
+    get:
+      tags:
+        - EDA Analysis
+      summary: Get EDA Results
+      description: Get EDA results for a dataset
+      operationId: getEdaResults
+      parameters:
+        - name: dataset_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: EDA results retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: EDA results not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /train-layout-model:
+    post:
+      tags:
+        - Training
+      summary: Train Layout Model
+      description: Train LayoutLMv3 model for document layout classification
+      operationId: trainLayoutModel
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [train_data_dir, val_data_dir, output_dir]
+              properties:
+                train_data_dir:
+                  type: string
+                val_data_dir:
+                  type: string
+                output_dir:
+                  type: string
+                epochs:
+                  type: integer
+                  default: 50
+                batch_size:
+                  type: integer
+                  default: 16
+                learning_rate:
+                  type: number
+                  format: float
+                  default: 0.0001
+                mixed_precision:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Training completed
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /train-yolo-model:
+    post:
+      tags:
+        - Training
+      summary: Train YOLO Model
+      description: Train YOLOv8 model for document object detection
+      operationId: trainYoloModel
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [data_yaml_path, output_dir]
+              properties:
+                data_yaml_path:
+                  type: string
+                output_dir:
+                  type: string
+                epochs:
+                  type: integer
+                  default: 50
+                batch_size:
+                  type: integer
+                  default: 16
+                learning_rate:
+                  type: number
+                  format: float
+                  default: 0.0001
+      responses:
+        '200':
+          description: Training completed
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /training-stats:
+    get:
+      tags:
+        - Training
+      summary: Training Stats
+      description: Get current training statistics and GPU usage
+      operationId: getTrainingStats
+      responses:
+        '200':
+          description: Stats retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+        '503':
+          description: Training service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /processing-stats:
+    get:
+      tags:
+        - System
+      summary: Processing Stats
+      description: Get current processing statistics and GPU usage
+      operationId: getProcessingStats
+      responses:
+        '200':
+          description: Stats retrieved
+          content:
+            application/json:
+              schema:
+                type: object
         '500':
           description: Internal server error
           content:
@@ -695,10 +1011,10 @@ components:
   schemas:
     # Enums
     StageType:
-      type: string
-      enum: ["1", "2", "3"]
+      type: integer
+      enum: [1, 2, 3]
       description: Available processing stages
-      example: "1"
+      example: 1
 
     # Request Models
     ProcessingRequest:
@@ -775,7 +1091,7 @@ components:
         has_annotations:
           type: boolean
           description: Whether annotations were provided
-          example: "true"
+          example: true
         total_size_gb:
           type: number
           format: float
@@ -1019,6 +1335,10 @@ components:
           description: Evaluation timestamp
         layout_metrics:
           $ref: '#/components/schemas/EvaluationMetrics'
+        text_metrics:
+          $ref: '#/components/schemas/TextMetrics'
+        language_metrics:
+          $ref: '#/components/schemas/LanguageMetrics'
         overall_score:
           type: number
           format: float
@@ -1035,6 +1355,42 @@ components:
             - "Increase training data for table detection"
             - "Optimize text extraction for low-resolution images"
             - "Improve language identification for rare languages"
+
+    TextMetrics:
+      type: object
+      properties:
+        cer:
+          type: number
+          format: float
+          description: Character Error Rate
+        wer:
+          type: number
+          format: float
+          description: Word Error Rate
+        accuracy:
+          type: number
+          format: float
+          description: Text extraction accuracy
+
+    LanguageMetrics:
+      type: object
+      properties:
+        accuracy:
+          type: number
+          format: float
+          description: Language identification accuracy
+        precision:
+          type: number
+          format: float
+          description: Language precision
+        recall:
+          type: number
+          format: float
+          description: Language recall
+        f1_score:
+          type: number
+          format: float
+          description: Language F1 score
 
     # System Models
     SystemStatus:
@@ -1062,15 +1418,15 @@ components:
           additionalProperties:
             type: boolean
           example:
-            yolov8x: "true"
-            layoutlmv3: "true"
-            mask_rcnn: "true"
-            easyocr: "true"
-            tesseract: "true"
-            fasttext: "true"
-            table_transformer: "true"
-            blip: "true"
-            ofa: "true"
+            yolov8x: true
+            layoutlmv3: true
+            mask_rcnn: true
+            easyocr: true
+            tesseract: true
+            fasttext: true
+            table_transformer: true
+            blip: true
+            ofa: true
         storage:
           type: object
           properties:
@@ -1103,15 +1459,78 @@ components:
             batch_processing:
               type: boolean
               description: Batch processing support
-              example: "true"
+              example: true
             background_jobs:
               type: boolean
               description: Background job processing
-              example: "true"
+              example: true
             memory_optimization:
               type: boolean
               description: Memory optimization features
-              example: "true"
+              example: true
+
+    ProcessStageResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: completed
+        dataset_id:
+          type: string
+        stage:
+          type: integer
+          enum: [1, 2, 3]
+        results:
+          type: object
+          additionalProperties: true
+        gpu_stats:
+          type: object
+          additionalProperties: true
+        optimization:
+          type: object
+          properties:
+            level:
+              type: string
+              enum: [speed, memory]
+            batch_size:
+              type: integer
+            gpu_acceleration:
+              type: boolean
+
+    ProcessAllResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: completed
+        dataset_id:
+          type: string
+        total_images:
+          type: integer
+        processing_time:
+          type: number
+          format: float
+        speed_images_per_second:
+          type: number
+          format: float
+        output_directory:
+          type: string
+        gpu_stats:
+          type: object
+          additionalProperties: true
+        optimization:
+          type: object
+          properties:
+            parallel_processing:
+              type: boolean
+            max_workers:
+              type: integer
+            gpu_acceleration:
+              type: boolean
+            batch_size:
+              type: integer
+            level:
+              type: string
 
     # Error Models
     ErrorResponse:
