@@ -93,31 +93,43 @@ RUN if [ "$INCLUDE_BLIP2" = "1" ]; then \
       HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python3.11 /app/scripts/utilities/fetch_models.py --target /app/models \
         --layoutlm microsoft/layoutlmv3-base \
         --pix2struct google/pix2struct-textcaps-base \
-        --table google/flan-t5-small ; \
+        --table google/flan-t5-small \
+        --bertscore roberta-large ; \
     else \
       HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python3.11 /app/scripts/utilities/fetch_models.py --target /app/models \
         --layoutlm microsoft/layoutlmv3-base \
         --pix2struct google/pix2struct-textcaps-base \
         --table google/flan-t5-small \
+        --bertscore roberta-large \
         --skip-blip2 ; \
     fi
 
-# Ensure yolov8x weights embedded if provided under models/ on build context
-# (Place yolov8x.pt in ./models before building to bake it into the image.)
+# Ensure yolov8x weights are provided under ./models before build; they will be copied by the models/ COPY above
 
 # Copy any provided local models over (overrides)
 COPY models/ ./models/
 
-# EasyOCR: set model directory; prefetch into image
 ENV EASYOCR_MODEL_PATH=/app/models/easyocr
 RUN HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python3.11 - <<'PY'
 import easyocr
-easyocr.Reader(['en','hi','ur','ar','ne','fa'], gpu=False, model_storage_directory='/app/models/easyocr', download_enabled=True)
-print('EasyOCR cache prepared')
+def prepare(group):
+    try:
+        easyocr.Reader(group, gpu=False, model_storage_directory='/app/models/easyocr', download_enabled=True)
+        print('EasyOCR cache prepared for', group)
+    except Exception as e:
+        print('EasyOCR prefetch skipped for', group, ':', e)
+# Arabic-compatible set with English
+prepare(['ar','fa','ur','en'])
+# Hindi set (with English)
+prepare(['hi','en'])
+# Nepali set (with English)
+prepare(['ne','en'])
+# English baseline
+prepare(['en'])
 PY
 
-# PaddleOCR: install and prefetch English models
-RUN python3.11 -m pip install --no-cache-dir paddleocr==2.7.0.3
+# PaddleOCR: install and prefetch English models (others can be added if needed)
+RUN python3.11 -m pip install --no-cache-dir paddleocr==2.7.0.3 || true
 RUN python3.11 - <<'PY'
 try:
     from paddleocr import PaddleOCR

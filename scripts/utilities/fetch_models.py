@@ -69,6 +69,7 @@ def main() -> None:
     parser.add_argument("--blip2", type=str, default="Salesforce/blip2-opt-2.7b")
     parser.add_argument("--pix2struct", type=str, default="google/pix2struct-textcaps-base")
     parser.add_argument("--table", type=str, default="google/flan-t5-small")
+    parser.add_argument("--bertscore", type=str, default="roberta-large", help="HF model id for BERTScore prefetch")
     parser.add_argument("--skip-blip2", action="store_true", help="Skip BLIP-2 download (very large)")
     args = parser.parse_args()
 
@@ -93,6 +94,12 @@ def main() -> None:
         download_model(args.blip2, target_root / "blip2-opt-2.7b")
     else:
         print("[fetch-models] Skipping BLIP-2 (use --skip-blip2=false to download)")
+
+    # BERTScore underlying model
+    try:
+        download_model(args.bertscore, target_root / "bertscore" / args.bertscore)
+    except Exception as e:
+        print(f"[fetch-models] BERTScore prefetch skipped: {e}")
 
     # fastText language ID file
     maybe_copy_fasttext_bin(target_root)
