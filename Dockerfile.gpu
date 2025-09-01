@@ -1,7 +1,7 @@
 # GPU-Optimized Dockerfile for PS-05 Challenge (A100 GPU)
 # Optimized for Ubuntu 24.04, 48-core CPU, 256GB RAM, A100 GPU
 
-# Use a widely available CUDA 12.1 devel image (Ubuntu 22.04)
+# Use CUDA 12.1 devel image on Ubuntu 22.04 (A100 compatible and available)
 FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
 
 # Build args to control optional large model fetches during build
@@ -131,12 +131,30 @@ PY
 # PaddleOCR: install and prefetch English models (others can be added if needed)
 RUN python3.11 -m pip install --no-cache-dir paddleocr==2.7.0.3 || true
 RUN python3.11 - <<'PY'
+langs = {
+    'en': ['en'],
+    'hi': ['hi', 'devanagari'],
+    'ur': ['ur', 'arabic'],
+    'ar': ['ar', 'arabic'],
+    'ne': ['ne', 'devanagari'],
+    'fa': ['fa', 'arabic', 'persian'],
+}
 try:
     from paddleocr import PaddleOCR
-    PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)
-    print('PaddleOCR cache prepared')
+    for lang_name, candidates in langs.items():
+        prepared = False
+        for code in candidates:
+            try:
+                PaddleOCR(use_angle_cls=True, lang=code, use_gpu=False)
+                print(f'PaddleOCR cache prepared for {lang_name} via code {code}')
+                prepared = True
+                break
+            except Exception as e:
+                print(f'PaddleOCR prefetch attempt failed for {lang_name} code {code}: {e}')
+        if not prepared:
+            print(f'PaddleOCR cache NOT prepared for {lang_name}; EasyOCR offline cache will be used as fallback')
 except Exception as e:
-    print('PaddleOCR prefetch skipped:', e)
+    print('PaddleOCR prefetch skipped entirely:', e)
 PY
 
 # Set permissions
