@@ -104,6 +104,73 @@ RUN if [ "$INCLUDE_BLIP2" = "1" ]; then \
         --skip-blip2 ; \
     fi
 
+# Ensure YOLOv8x weights exist inside the image
+RUN python3.11 - <<'PY'
+try:
+    from ultralytics.utils.downloads import attempt_download
+    attempt_download("yolov8x.pt", dir="/app/models")
+    print("Downloaded yolov8x.pt to /app/models")
+except Exception as e:
+    print("Failed to pre-download yolov8x.pt:", e)
+PY
+
+# Materialize local checkpoints so code paths work fully offline
+RUN HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 python3.11 - <<'PY'
+from transformers import LayoutLMv3Processor, LayoutLMv3ForSequenceClassification
+from transformers import Blip2Processor, Blip2ForConditionalGeneration
+from transformers import Pix2StructProcessor, Pix2StructForConditionalGeneration
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+def save_layoutlmv3_six_class():
+    try:
+        base = "microsoft/layoutlmv3-base"
+        proc = LayoutLMv3Processor.from_pretrained(base)
+        model = LayoutLMv3ForSequenceClassification.from_pretrained(base, num_labels=6)
+        proc.save_pretrained("/app/models/layoutlmv3-6class")
+        model.save_pretrained("/app/models/layoutlmv3-6class")
+        print("Saved LayoutLMv3 6-class head to /app/models/layoutlmv3-6class")
+    except Exception as e:
+        print("Skipping LayoutLMv3 materialization:", e)
+
+def save_blip2():
+    try:
+        name = "Salesforce/blip2-opt-2.7b"
+        proc = Blip2Processor.from_pretrained(name)
+        model = Blip2ForConditionalGeneration.from_pretrained(name)
+        proc.save_pretrained("/app/models/blip2-opt-2.7b")
+        model.save_pretrained("/app/models/blip2-opt-2.7b")
+        print("Saved BLIP-2 to /app/models/blip2-opt-2.7b")
+    except Exception as e:
+        print("Skipping BLIP-2 materialization:", e)
+
+def save_pix2struct():
+    try:
+        name = "google/pix2struct-textcaps-base"
+        proc = Pix2StructProcessor.from_pretrained(name)
+        model = Pix2StructForConditionalGeneration.from_pretrained(name)
+        proc.save_pretrained("/app/models/pix2struct-chart")
+        model.save_pretrained("/app/models/pix2struct-chart")
+        print("Saved Pix2Struct to /app/models/pix2struct-chart")
+    except Exception as e:
+        print("Skipping Pix2Struct materialization:", e)
+
+def save_table_t2t():
+    try:
+        name = "google/flan-t5-small"
+        tok = AutoTokenizer.from_pretrained(name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(name)
+        tok.save_pretrained("/app/models/table-t2t")
+        model.save_pretrained("/app/models/table-t2t")
+        print("Saved table T2T to /app/models/table-t2t")
+    except Exception as e:
+        print("Skipping table T2T materialization:", e)
+
+save_layoutlmv3_six_class()
+save_blip2()
+save_pix2struct()
+save_table_t2t()
+PY
+
 # Ensure yolov8x weights are provided under ./models before build; they will be copied by the models/ COPY above
 
 # Copy any provided local models over (overrides)

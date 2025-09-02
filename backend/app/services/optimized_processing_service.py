@@ -96,18 +96,33 @@ class OptimizedProcessingService:
         try:
             # Stage 1: Layout Detection (GPU optimized)
             logger.info("Loading YOLOv8x for layout detection...")
-            yolo_weights = os.environ.get("YOLO_WEIGHTS", "/app/models/yolov8x.pt")
-            models['yolo'] = YOLO(yolo_weights)
-            if self.device == "cuda":
-                models['yolo'].to(self.device)
+            try:
+                yolo_weights = os.environ.get("YOLO_WEIGHTS", "/app/models/yolov8x.pt")
+                models['yolo'] = YOLO(yolo_weights)
+                if self.device == "cuda":
+                    models['yolo'].to(self.device)
+            except Exception as e:
+                logger.warning(f"YOLO weights not found or failed to load ({e}); using default 'yolov8x' from hub.")
+                models['yolo'] = YOLO('yolov8x.pt')
+                if self.device == "cuda":
+                    try:
+                        models['yolo'].to(self.device)
+                    except Exception:
+                        pass
             
-            # LayoutLMv3 for fine-grained classification
-            logger.info("Loading LayoutLMv3...")
-            layoutlm_ckpt = os.environ.get("LAYOUTLMV3_CHECKPOINT", "microsoft/layoutlmv3-base")
-            models['layoutlmv3'] = LayoutLMv3ForSequenceClassification.from_pretrained(layoutlm_ckpt)
-            models['layoutlmv3_processor'] = LayoutLMv3Processor.from_pretrained(layoutlm_ckpt)
-            if self.device == "cuda":
-                models['layoutlmv3'].to(self.device)
+            # LayoutLMv3 for fine-grained classification (optional)
+            try:
+                logger.info("Loading LayoutLMv3 (optional)...")
+                layoutlm_ckpt = os.environ.get("LAYOUTLMV3_CHECKPOINT", "")
+                if layoutlm_ckpt:
+                    models['layoutlmv3'] = LayoutLMv3ForSequenceClassification.from_pretrained(layoutlm_ckpt)
+                    models['layoutlmv3_processor'] = LayoutLMv3Processor.from_pretrained(layoutlm_ckpt)
+                    if self.device == "cuda":
+                        models['layoutlmv3'].to(self.device)
+                else:
+                    logger.info("LAYOUTLMV3_CHECKPOINT not set; skipping LayoutLMv3 refinement.")
+            except Exception as e:
+                logger.warning(f"LayoutLMv3 unavailable; skipping refinement: {e}")
             
             # Stage 2: OCR and Language Detection
             logger.info("Loading EasyOCR...")
@@ -127,25 +142,39 @@ class OptimizedProcessingService:
             except Exception as e:
                 logger.warning(f"PaddleOCR not enabled: {e}")
             
-            logger.info("Loading fastText language detection...")
-            lid_path = Path('lid.176.bin')
-            if not lid_path.exists():
-                # Also check in /app for Docker image path
-                alt_path = Path('/app/lid.176.bin')
-                if alt_path.exists():
-                    lid_path = alt_path
-            models['langdetect'] = fasttext.load_model(str(lid_path))
+            # Language detection (optional fastText)
+            try:
+                logger.info("Loading fastText language detection...")
+                lid_path = Path('lid.176.bin')
+                if not lid_path.exists():
+                    alt_path = Path('/app/lid.176.bin')
+                    if alt_path.exists():
+                        lid_path = alt_path
+                if lid_path.exists():
+                    models['langdetect'] = fasttext.load_model(str(lid_path))
+                else:
+                    logger.warning("lid.176.bin not found; language detection will default to 'en'.")
+                    models['langdetect'] = None
+            except Exception as e:
+                logger.warning(f"fastText language model unavailable; defaulting language to 'en': {e}")
+                models['langdetect'] = None
             
-            # Stage 3: Content Understanding
-            logger.info("Loading BLIP-2 for image captioning...")
-            from transformers import Blip2Processor, Blip2ForConditionalGeneration
-            blip2_ckpt = os.environ.get("BLIP2_CHECKPOINT", "Salesforce/blip2-opt-2.7b")
-            models['blip2_processor'] = Blip2Processor.from_pretrained(blip2_ckpt)
-            models['blip2'] = Blip2ForConditionalGeneration.from_pretrained(blip2_ckpt)
-            if self.device == "cuda":
-                models['blip2'].to(self.device)
+            # Stage 3: Content Understanding (optional)
+            try:
+                logger.info("Loading BLIP-2 for image captioning (optional)...")
+                from transformers import Blip2Processor, Blip2ForConditionalGeneration
+                blip2_ckpt = os.environ.get("BLIP2_CHECKPOINT", "")
+                if blip2_ckpt:
+                    models['blip2_processor'] = Blip2Processor.from_pretrained(blip2_ckpt)
+                    models['blip2'] = Blip2ForConditionalGeneration.from_pretrained(blip2_ckpt)
+                    if self.device == "cuda":
+                        models['blip2'].to(self.device)
+                else:
+                    logger.info("BLIP2_CHECKPOINT not set; skipping content captioning.")
+            except Exception as e:
+                logger.warning(f"BLIP-2 unavailable; skipping content captioning: {e}")
             
-            logger.info("All models loaded successfully!")
+            logger.info("Core models loaded (with graceful fallbacks).")
 
             # Optional specialized captioner for charts (Pix2Struct)
             try:
@@ -199,6 +228,8 @@ class OptimizedProcessingService:
     def _caption_from_pil(self, pil_image: Image.Image) -> str:
         """Generate a caption using BLIP-2 for a given PIL image region."""
         try:
+            if not self.models.get('blip2_processor') or not self.models.get('blip2'):
+                return ""
             inputs = self.models['blip2_processor'](pil_image, return_tensors="pt")
             if self.device == "cuda":
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}
@@ -599,8 +630,11 @@ class OptimizedProcessingService:
             for (bbox, text, confidence) in ocr_results:
                 # Detect language using fastText (176 languages as per requirements)
                 if text.strip():
-                    lang_pred = self.models['langdetect'].predict(text, k=1)
-                    language = lang_pred[0][0].replace('__label__', '')
+                    if self.models.get('langdetect') is not None:
+                        lang_pred = self.models['langdetect'].predict(text, k=1)
+                        language = lang_pred[0][0].replace('__label__', '')
+                    else:
+                        language = 'en'
                     
                     # Ensure language is one of the target languages
                     target_languages = ['en', 'hi', 'ur', 'ar', 'ne', 'fa']
@@ -639,7 +673,9 @@ class OptimizedProcessingService:
             # Convert to PIL for BLIP-2
             pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             
-            # Generate description using BLIP-2
+            # Generate description using BLIP-2 (if available)
+            if not self.models.get('blip2_processor') or not self.models.get('blip2'):
+                return {"description": ""}
             inputs = self.models['blip2_processor'](pil_image, return_tensors="pt")
             if self.device == "cuda":
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}

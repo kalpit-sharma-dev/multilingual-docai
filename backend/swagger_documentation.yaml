@@ -211,6 +211,9 @@ paths:
                   type: string
                   format: binary
                   description: Optional ground truth annotations in JSON format
+                annotations_json:
+                  type: string
+                  description: Optional inline annotations JSON (alternative to file upload)
                 dataset_name:
                   type: string
                   description: Optional name for the dataset
@@ -220,6 +223,13 @@ paths:
                 contentType: image/*
               annotations:
                 contentType: application/json
+      parameters:
+        - name: dataset_name
+          in: query
+          required: false
+          description: Optional dataset name (query alternative to form field)
+          schema:
+            type: string
       responses:
         '200':
           description: Dataset uploaded successfully

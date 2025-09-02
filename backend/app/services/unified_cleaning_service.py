@@ -12,7 +12,12 @@ import json
 from datetime import datetime
 
 from .image_cleaner import ImageCleaningService
-from .document_cleaner import DocumentCleaningService
+try:
+    from .document_cleaner import DocumentCleaningService  # type: ignore
+except Exception as e:  # pragma: no cover
+    DocumentCleaningService = None  # type: ignore
+    logger = logging.getLogger(__name__)
+    logger.warning(f"DocumentCleaningService unavailable, document cleaning will be disabled: {e}")
 from .eda_service import DatasetEDA
 
 logger = logging.getLogger(__name__)
@@ -23,7 +28,12 @@ class UnifiedCleaningService:
     def __init__(self, config: Optional[Dict] = None):
         self.config = config or self._get_default_config()
         self.image_cleaner = ImageCleaningService(self.config.get("image_cleaning", {}))
-        self.document_cleaner = DocumentCleaningService(self.config.get("document_cleaning", {}))
+        self.document_cleaner = None
+        try:
+            if DocumentCleaningService is not None:
+                self.document_cleaner = DocumentCleaningService(self.config.get("document_cleaning", {}))
+        except Exception as e:
+            logger.warning(f"Document cleaner initialization failed; disabling document cleaning: {e}")
         self.cleaning_log = []
         self.eda_service: Optional[DatasetEDA] = None
         
@@ -188,6 +198,9 @@ class UnifiedCleaningService:
     def _clean_documents(self, input_dir: Path, output_dir: Path) -> Dict:
         """Clean document dataset."""
         logger.info("Starting document cleaning...")
+        if self.document_cleaner is None:
+            logger.warning("Document cleaning is unavailable (langdetect or dependencies missing)")
+            return {"error": "Document cleaning unavailable: missing optional dependency"}
         
         # Create document output directory
         document_output_dir = output_dir / "cleaned_documents"

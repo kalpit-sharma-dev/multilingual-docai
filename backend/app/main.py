@@ -16,7 +16,7 @@ Features:
 - Handles large datasets (20GB+)
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -203,7 +203,9 @@ async def upload_dataset(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     annotations: Optional[UploadFile] = File(None),
-    dataset_name: Optional[str] = None
+    annotations_json: Optional[str] = Form(None),
+    dataset_name: Optional[str] = Form(None),
+    dataset_name_q: Optional[str] = Query(None)
 ):
     """
     Upload dataset for processing.
@@ -255,11 +257,23 @@ async def upload_dataset(
             # Load and validate annotations
             with open(annotation_path, 'r') as f:
                 annotation_data = json.load(f)
+        elif annotations_json:
+            try:
+                # Parse inline annotations JSON
+                annotation_data = json.loads(annotations_json)
+                annotation_path = dataset_dir / "annotations.json"
+                with open(annotation_path, 'w', encoding='utf-8') as f:
+                    json.dump(annotation_data, f, ensure_ascii=False, indent=2)
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid annotations_json: {e}")
         
         # Create dataset info
+        # Prefer form dataset_name, then query param, then default
+        final_dataset_name = dataset_name or dataset_name_q or f"Dataset_{dataset_id[:8]}"
+
         dataset_info = {
             "dataset_id": dataset_id,
-            "dataset_name": dataset_name or f"Dataset_{dataset_id[:8]}",
+            "dataset_name": final_dataset_name,
             "upload_time": datetime.now().isoformat(),
             "num_images": len(uploaded_files),
             "total_size_gb": total_size_bytes / (1024**3),
