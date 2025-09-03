@@ -87,7 +87,7 @@ services:
       - ./logs:/app/logs
       - ./backend:/app/backend
       - ./scripts:/app/scripts
-      - ./data/api_datasets:/app/data/api_datasets
+      - "D:/IIT/docai/data/train:/app/data/api_datasets"
       - ./data/api_results:/app/data/api_results
       # Example: mount a specific evaluation dataset (read-only)
       # - /data/ps05_eval/<DATASET_ID>/images:/app/data/api_datasets/<DATASET_ID>/images:ro

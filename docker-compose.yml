@@ -19,7 +19,8 @@ services:
       - ./results:/app/results
       - ./models:/app/models
       - ./logs:/app/logs
-      - ./data:/app/data
+      - "D:/IIT/docai/data/train:/app/data/api_datasets"
+      - ./data/api_results:/app/data/api_results
       - ./backend:/app/backend
       - ./scripts:/app/scripts
     restart: unless-stopped
