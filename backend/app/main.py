@@ -26,6 +26,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional
 import shutil
+import asyncio
 import uuid
 from datetime import datetime
 
@@ -303,19 +304,24 @@ async def upload_dataset(
 
 @app.post("/process-stage", tags=["Processing"])
 async def process_stage(
-    dataset_id: str = Form(...),
+    dataset_id: Optional[str] = Form(None),
     stage: int = Form(...),
     optimization_level: str = Form("speed"),
     batch_size: int = Form(50),
     gpu_acceleration: bool = Form(True)
 ):
     """
-    Process a specific stage for a dataset with GPU optimization.
+    Process a specific stage with GPU optimization.
     
     **Available Stages:**
     - **Stage 1**: Layout Detection (YOLOv8, LayoutLMv3, Mask R-CNN)
     - **Stage 2**: Text Extraction + Language Identification (EasyOCR, Tesseract, fastText)
     - **Stage 3**: Content Understanding + Natural Language Generation (Table Transformer, BLIP, OFA)
+    
+    Behavior:
+    - If `dataset_id` is provided: expects images under `data/api_datasets/{dataset_id}/images`.
+      If that path does not exist, will fallback to `data/api_datasets/{dataset_id}`.
+    - If `dataset_id` is NOT provided: processes all images directly under `data/api_datasets`.
     
     **Optimization Options:**
     - **optimization_level**: "speed" (default) or "memory"
@@ -323,10 +329,24 @@ async def process_stage(
     - **gpu_acceleration**: Enable GPU acceleration (default: True)
     """
     try:
-        # Get dataset path (images live under data/api_datasets/{id}/images)
-        dataset_path = str(DATASET_STORAGE / dataset_id / "images")
-        if not os.path.exists(dataset_path):
-            raise HTTPException(status_code=404, detail="Dataset not found")
+        # Resolve dataset path based on provided dataset_id.
+        # - When dataset_id provided: prefer data/api_datasets/{id}/images, fallback to {id}
+        # - When not provided: use data/api_datasets directly (mounted volume with images)
+        if dataset_id:
+            preferred = DATASET_STORAGE / dataset_id / "images"
+            fallback = DATASET_STORAGE / dataset_id
+            if preferred.exists() and preferred.is_dir():
+                dataset_path = str(preferred)
+            elif fallback.exists() and fallback.is_dir():
+                dataset_path = str(fallback)
+            else:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+        else:
+            # No dataset_id: process all images under the mounted directory
+            if DATASET_STORAGE.exists() and DATASET_STORAGE.is_dir():
+                dataset_path = str(DATASET_STORAGE)
+            else:
+                raise HTTPException(status_code=404, detail="Mounted dataset directory not found at /app/data/api_datasets")
         
         # Configure optimization
         from .services.optimized_processing_service import ProcessingConfig  # type: ignore
@@ -339,24 +359,34 @@ async def process_stage(
         # Create optimized service instance
         service = create_optimized_service(config)
         
-        # Process specific stage
+        # Build list of image files
+        image_files = service._get_image_files(dataset_path)
+        total_images = len(image_files)
+        if total_images == 0:
+            raise HTTPException(status_code=400, detail="No images found to process")
+        
+        # Dispatch stage-specific async tasks over all images
+        tasks = []
         if stage == 1:
-            # Layout detection
-            results = await service._detect_layout_gpu(dataset_path)
+            tasks = [service._detect_layout_gpu(img) for img in image_files]
         elif stage == 2:
-            # Text extraction + Language ID
-            results = await service._extract_text_and_language(dataset_path)
+            tasks = [service._extract_text_and_language(img) for img in image_files]
         elif stage == 3:
-            # Content understanding
-            results = await service._understand_content_gpu(dataset_path)
+            tasks = [service._understand_content_gpu(img) for img in image_files]
         else:
             raise HTTPException(status_code=400, detail="Invalid stage number")
         
+        stage_results = await asyncio.gather(*tasks)
+        # Map results by filename for clarity
+        results_by_file = {Path(img).name: res for img, res in zip(image_files, stage_results)}
+        
         return {
             "status": "completed",
-            "dataset_id": dataset_id,
+            "dataset_id": dataset_id or "mounted_dir",
+            "dataset_path": dataset_path,
             "stage": stage,
-            "results": results,
+            "total_images": total_images,
+            "results": results_by_file,
             "gpu_stats": service.get_processing_stats(),
             "optimization": {
                 "level": optimization_level,
