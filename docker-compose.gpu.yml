@@ -16,6 +16,7 @@ services:
       - HF_HOME=/app/models
       - MPLCONFIGDIR=/tmp
       - YOLO_CONFIG_DIR=/tmp
+      - YOLO_WEIGHTS=/app/models/layout_yolo_6class.pt
       - HF_HUB_OFFLINE=0
       - TRANSFORMERS_OFFLINE=0
       # Optional specialized models
@@ -84,6 +85,7 @@ services:
       - ./datasets:/app/datasets
       - ./results:/app/results
       - ./models:/app/models
+      - ./core/stage1/stage1_enhanced/training/layout_detector2/weights/best.pt:/app/models/layout_yolo_6class.pt:ro
       - ./logs:/app/logs
       - ./backend:/app/backend
       - ./scripts:/app/scripts

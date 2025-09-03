@@ -379,6 +379,21 @@ async def process_stage(
         stage_results = await asyncio.gather(*tasks)
         # Map results by filename for clarity
         results_by_file = {Path(img).name: res for img, res in zip(image_files, stage_results)}
+
+        # If Stage 1, persist per-image JSON files to results directory
+        if stage == 1:
+            out_dir = RESULTS_STORAGE / (dataset_id or "mounted_dir") / "stage_1"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for img_name, res in results_by_file.items():
+                try:
+                    payload = {
+                        "file_name": img_name,
+                        "layout_elements": res.get("layout_elements", [])
+                    }
+                    with open(out_dir / f"{Path(img_name).stem}.json", 'w', encoding='utf-8') as f:
+                        json.dump(payload, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"Failed to write stage 1 result for {img_name}: {e}")
         
         return {
             "status": "completed",

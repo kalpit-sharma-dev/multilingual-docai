@@ -582,10 +582,36 @@ class OptimizedProcessingService:
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                         confidence = box.conf[0].cpu().numpy()
                         class_id = int(box.cls[0].cpu().numpy())
-                        
-                        # Map class IDs to labels (exactly as per PS-05 requirements)
-                        class_labels = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
-                        label = class_labels[min(class_id, len(class_labels) - 1)]
+                        # Determine label name from model metadata if available
+                        label = str(class_id)
+                        try:
+                            # Ultralytics results carry a names dict
+                            names = getattr(result, 'names', None)
+                            if isinstance(names, dict):
+                                label = names.get(class_id, label)
+                            else:
+                                # Try model names
+                                model_names = getattr(self.models['yolo'].model, 'names', None)
+                                if isinstance(model_names, dict):
+                                    label = model_names.get(class_id, label)
+                        except Exception:
+                            pass
+                        # Optional remap to PS-05 6-class labels ONLY if the model is 6-class
+                        ps05_labels = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
+                        try:
+                            model_num_classes = None
+                            model_names = getattr(self.models['yolo'].model, 'names', None)
+                            if isinstance(model_names, dict):
+                                model_num_classes = len(model_names)
+                            if model_num_classes == 6:
+                                label = ps05_labels[min(class_id, 5)]
+                            elif model_num_classes is None:
+                                # Unknown mapping; keep detected label string
+                                pass
+                            else:
+                                logger.warning(f"YOLO model classes={model_num_classes} != 6. Provide PS-05 6-class weights via YOLO_WEIGHTS to avoid misclassification.")
+                        except Exception:
+                            pass
                         
                         # Standardize to [x, y, h, w]
                         layout_elements.append({
