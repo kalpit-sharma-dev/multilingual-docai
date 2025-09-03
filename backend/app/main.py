@@ -403,7 +403,7 @@ async def process_stage(
 
 @app.post("/process-all", tags=["Processing"])
 async def process_all_stages(
-    dataset_id: str = Form(...),
+    dataset_id: Optional[str] = Form(None),
     parallel_processing: bool = Form(True),
     max_workers: int = Form(8),
     gpu_acceleration: bool = Form(True),
@@ -411,9 +411,14 @@ async def process_all_stages(
     optimization_level: str = Form("speed")
 ):
     """
-    Process all 3 stages for a dataset with GPU optimization.
+    Process all 3 stages with GPU optimization.
     This runs in the background and returns a job ID.
     Optimized for large datasets (20GB+) and A100 GPU.
+    
+    Behavior:
+    - If `dataset_id` is provided: expects images under `data/api_datasets/{dataset_id}/images`.
+      If that path does not exist, will fallback to `data/api_datasets/{dataset_id}`.
+    - If `dataset_id` is NOT provided: processes all images directly under `data/api_datasets`.
     
     **Processing Flow:**
     1. Layout Detection → 2. Text Extraction + Language ID → 3. Content Understanding
@@ -426,10 +431,23 @@ async def process_all_stages(
     - **optimization_level**: "speed" (default) or "memory"
     """
     try:
-        # Get dataset path (images live under data/api_datasets/{id}/images)
-        dataset_path = str(DATASET_STORAGE / dataset_id / "images")
-        if not os.path.exists(dataset_path):
-            raise HTTPException(status_code=404, detail="Dataset not found")
+        # Resolve dataset path based on provided dataset_id.
+        # - When dataset_id provided: prefer data/api_datasets/{id}/images, fallback to {id}
+        # - When not provided: use data/api_datasets directly (mounted volume with images)
+        if dataset_id:
+            preferred = DATASET_STORAGE / dataset_id / "images"
+            fallback = DATASET_STORAGE / dataset_id
+            if preferred.exists() and preferred.is_dir():
+                dataset_path = str(preferred)
+            elif fallback.exists() and fallback.is_dir():
+                dataset_path = str(fallback)
+            else:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+        else:
+            if DATASET_STORAGE.exists() and DATASET_STORAGE.is_dir():
+                dataset_path = str(DATASET_STORAGE)
+            else:
+                raise HTTPException(status_code=404, detail="Mounted dataset directory not found at /app/data/api_datasets")
         
         # Configure for maximum speed
         from .services.optimized_processing_service import ProcessingConfig  # type: ignore
@@ -445,12 +463,13 @@ async def process_all_stages(
         service = create_optimized_service(config)
         
         # Start parallel processing
-        output_dir = str(RESULTS_STORAGE / dataset_id / "gpu_optimized")
+        output_dir = str(RESULTS_STORAGE / (dataset_id or "mounted_dir") / "gpu_optimized")
         results = await service.process_dataset_parallel(dataset_path, output_dir)
         
         return {
             "status": "completed",
-            "dataset_id": dataset_id,
+            "dataset_id": dataset_id or "mounted_dir",
+            "dataset_path": dataset_path,
             "total_images": results["total_images"],
             "processing_time": results["processing_time"],
             "speed_images_per_second": results["speed_images_per_second"],
