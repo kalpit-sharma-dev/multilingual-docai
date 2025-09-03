@@ -1,11 +1,10 @@
-version: '3.8'
-
 services:
   ps05-gpu:
     build:
       context: .
       dockerfile: Dockerfile.gpu
     container_name: ps05-gpu-challenge
+    gpus: all
     ports:
       - "8000:8000"
     environment:
@@ -108,36 +107,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  # Optional: Monitoring service for GPU metrics
-  gpu-monitor:
-    image: nvidia/cuda:12.1-base-ubuntu24.04
-    container_name: ps05-gpu-monitor
-    command: >
-      bash -c "
-        apt-get update && apt-get install -y nvidia-utils-535 &&
-        nvidia-smi -l 1
-      "
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=utility
-    volumes:
-      - /usr/bin/nvidia-smi:/usr/bin/nvidia-smi
-      - /usr/bin/nvidia-debugdump:/usr/bin/nvidia-debugdump
-      - /usr/bin/nvidia-persistenced:/usr/bin/nvidia-persistenced
-      - /usr/bin/nvidia-cuda-mps-control:/usr/bin/nvidia-cuda-mps-control
-      - /usr/bin/nvidia-cuda-mps-server:/usr/bin/nvidia-cuda-mps-server
-      - /usr/bin/nvidia-modprobe:/usr/bin/nvidia-modprobe
-      - /usr/bin/nvidia-settings:/usr/bin/nvidia-settings
-      - /usr/bin/nvidia-xconfig:/usr/bin/nvidia-xconfig
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [utility]
-    restart: unless-stopped
 
 networks:
   default:
