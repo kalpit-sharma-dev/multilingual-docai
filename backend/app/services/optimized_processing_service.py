@@ -217,6 +217,27 @@ class OptimizedProcessingService:
         
         return models
 
+    def _normalize_ps05_label(self, raw_label: str, class_id: Optional[int] = None, total_classes: Optional[int] = None) -> str:
+        """Normalize diverse model label names to PS-05 canonical labels.
+        Canonical: Background, Text, Title, List, Table, Figure.
+        """
+        try:
+            ps05_labels = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
+            if total_classes == 6 and class_id is not None:
+                return ps05_labels[min(class_id, 5)]
+            name = (raw_label or '').strip().lower()
+            synonyms = {
+                'background': 'Background', 'bg': 'Background', 'other': 'Background',
+                'text': 'Text', 'paragraph': 'Text', 'body': 'Text', 'content': 'Text',
+                'title': 'Title', 'heading': 'Title', 'header': 'Title', 'headline': 'Title',
+                'list': 'List', 'bullet': 'List', 'enumeration': 'List',
+                'table': 'Table', 'tabular': 'Table',
+                'figure': 'Figure', 'image': 'Figure', 'chart': 'Figure', 'diagram': 'Figure', 'photo': 'Figure'
+            }
+            return synonyms.get(name, raw_label)
+        except Exception:
+            return raw_label
+
     def _convert_quad_to_hbb_xyhw(self, quad: Any) -> List[int]:
         """Convert a 4-point quadrilateral to HBB in [x, y, h, w] order.
         EasyOCR returns [[x1,y1],[x2,y2],[x3,y3],[x4,y4]].
@@ -570,8 +591,8 @@ class OptimizedProcessingService:
             # Convert to PIL for YOLO
             pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             
-            # Run YOLOv8x inference on GPU
-            results = self.models['yolo'](pil_image, device=self.device)
+            # Run YOLOv8x inference on GPU with explicit thresholds
+            results = self.models['yolo'](pil_image, device=self.device, conf=0.25, iou=0.45, imgsz=1024)
             
             # Process results
             layout_elements = []
@@ -596,28 +617,22 @@ class OptimizedProcessingService:
                                     label = model_names.get(class_id, label)
                         except Exception:
                             pass
-                        # Optional remap to PS-05 6-class labels ONLY if the model is 6-class
-                        ps05_labels = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
+                        # Normalize label to PS-05 canonical labels
+                        model_num_classes = None
                         try:
-                            model_num_classes = None
                             model_names = getattr(self.models['yolo'].model, 'names', None)
                             if isinstance(model_names, dict):
                                 model_num_classes = len(model_names)
-                            if model_num_classes == 6:
-                                label = ps05_labels[min(class_id, 5)]
-                            elif model_num_classes is None:
-                                # Unknown mapping; keep detected label string
-                                pass
-                            else:
-                                logger.warning(f"YOLO model classes={model_num_classes} != 6. Provide PS-05 6-class weights via YOLO_WEIGHTS to avoid misclassification.")
                         except Exception:
-                            pass
+                            model_num_classes = None
+                        label = self._normalize_ps05_label(label, class_id, model_num_classes)
                         
                         # Standardize to [x, y, h, w]
                         layout_elements.append({
                             "type": label,
                             "bbox": [int(x1), int(y1), int(y2 - y1), int(x2 - x1)],
-                            "confidence": float(confidence)
+                            "confidence": float(confidence),
+                            "class_id": class_id
                         })
             
             return {"layout_elements": layout_elements}
