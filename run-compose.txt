@@ -1,0 +1,6 @@
+CPU:
+Build: docker build -t ps05-backend -f Dockerfile .
+Run: docker compose up -d
+GPU:
+Build: docker build -t ps05-gpu -f Dockerfile.gpu .
+Run: docker compose -f docker-compose.gpu.yml up -d

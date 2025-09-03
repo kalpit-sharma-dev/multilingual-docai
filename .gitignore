@@ -278,7 +278,7 @@ logs/
 *.pdf
 
 # Large text files
-*.txt
+!*.txt
 !requirements.txt
 !README.txt
 
