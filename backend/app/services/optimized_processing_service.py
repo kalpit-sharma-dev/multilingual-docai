@@ -125,17 +125,27 @@ class OptimizedProcessingService:
                 logger.warning(f"LayoutLMv3 unavailable; skipping refinement: {e}")
             
             # Stage 2: OCR and Language Detection
-            logger.info("Loading EasyOCR...")
+            # If PaddleOCR is enabled, skip EasyOCR loading to avoid offline model dependency
+            use_paddle = os.environ.get("USE_PADDLEOCR", "0") == "1"
             easyocr_dir = os.environ.get("EASYOCR_MODEL_PATH", "/app/models/easyocr")
-            models['ocr'] = easyocr.Reader(
-                ['en', 'hi', 'ur', 'ar', 'ne', 'fa'],
-                gpu=(self.device=="cuda"),
-                model_storage_directory=easyocr_dir,
-                download_enabled=False
-            )
+            if use_paddle:
+                models['ocr'] = None
+                logger.info("Skipping EasyOCR load because USE_PADDLEOCR=1")
+            else:
+                logger.info("Loading EasyOCR...")
+                try:
+                    models['ocr'] = easyocr.Reader(
+                        ['en', 'hi', 'ur', 'ar', 'ne', 'fa'],
+                        gpu=(self.device=="cuda"),
+                        model_storage_directory=easyocr_dir,
+                        download_enabled=False
+                    )
+                except Exception as e:
+                    logger.warning(f"EasyOCR unavailable; will continue without it: {e}")
+                    models['ocr'] = None
             # Optional: PaddleOCR as primary (enabled when USE_PADDLEOCR=1)
             try:
-                if os.environ.get("USE_PADDLEOCR", "0") == "1":
+                if use_paddle:
                     from paddleocr import PaddleOCR  # type: ignore
                     models['paddleocr'] = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=(self.device=="cuda"))
                     logger.info("PaddleOCR enabled as primary OCR (lang='en').")
