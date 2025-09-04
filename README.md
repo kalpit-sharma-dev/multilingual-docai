@@ -130,13 +130,13 @@ docker load -i ps05-backend-gpu-offline.tar
 bash scripts/utilities/rehearsal.sh <DATASET_ID> http://localhost:8000
 ```
 
-- Schema check (validate [x,y,h,w] and required keys on outputs):
+- Schema check (validate [x,y,w,h] and required keys on outputs):
 ```bash
 python scripts/utilities/schema_check.py results/<DATASET_ID>
 ```
 
 Output spec:
-- All bounding boxes standardized to `[x, y, h, w]` (HBB) across stages.
+- All bounding boxes standardized to `[x, y, w, h]` (HBB) across stages.
 - Per-element captions are produced for Table/Figure regions; whole-image caption may also be included.
 
 ## 🔧 **Architecture Overview**

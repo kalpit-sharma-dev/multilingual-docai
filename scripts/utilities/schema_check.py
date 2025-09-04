@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Quick schema check for result JSONs.
-Validates that bounding boxes use [x, y, h, w] and required keys exist.
+Validates that bounding boxes use [x, y, w, h] and required keys exist.
 Usage:
   python scripts/utilities/schema_check.py /path/to/results/<DATASET_ID>
 """
@@ -12,11 +12,11 @@ from pathlib import Path
 
 REQUIRED_ELEMENT_KEYS = {"type", "bbox"}
 
-def is_xyhw(bbox):
-    # Expect list of 4 ints/floats in [x, y, h, w]
+def is_xywh(bbox):
+    # Expect list of 4 ints/floats in [x, y, w, h]
     if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
         return False
-    x, y, h, w = bbox
+    x, y, w, h = bbox
     try:
         _ = float(x); _ = float(y); _ = float(h); _ = float(w)
     except Exception:
@@ -40,8 +40,8 @@ def check_file(fp: Path):
         missing = REQUIRED_ELEMENT_KEYS - set(el.keys())
         if missing:
             issues.append((str(fp), f"element_{idx}_missing_keys:{sorted(missing)}"))
-        if "bbox" in el and not is_xyhw(el["bbox"]):
-            issues.append((str(fp), f"element_{idx}_bbox_not_xyhw"))
+        if "bbox" in el and not is_xywh(el["bbox"]):
+            issues.append((str(fp), f"element_{idx}_bbox_not_xywh"))
     return issues
 
 def main():

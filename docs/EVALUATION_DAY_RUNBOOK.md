@@ -68,7 +68,7 @@ curl -X POST http://localhost:8000/process-all \
 ```
 
 Notes on outputs:
-- Bounding boxes are standardized to `[x, y, h, w]` (HBB).
+- Bounding boxes are standardized to `[x, y, w, h]` (HBB).
 - Per-element captions are generated for Table/Figure; charts/maps under Figure use a chart model if provided, else BLIP-2.
 
 ## 7) Offline image save/load

@@ -95,9 +95,12 @@ class OptimizedProcessingService:
         
         try:
             # Stage 1: Layout Detection (GPU optimized)
-            logger.info("Loading YOLOv8x for layout detection...")
+            logger.info("Loading YOLO for 6-class layout detection...")
             try:
-                yolo_weights = os.environ.get("YOLO_WEIGHTS", "/app/models/yolov8x.pt")
+                # Prefer fine-tuned 6-class weights if present; else use env; else fallback to yolov8x
+                default_layout_weights = "/app/models/layout_yolo_6class.pt"
+                env_weights = os.environ.get("YOLO_WEIGHTS")
+                yolo_weights = default_layout_weights if os.path.exists(default_layout_weights) else (env_weights or "/app/models/yolov8x.pt")
                 models['yolo'] = YOLO(yolo_weights)
                 if self.device == "cuda":
                     models['yolo'].to(self.device)
@@ -238,8 +241,8 @@ class OptimizedProcessingService:
         except Exception:
             return raw_label
 
-    def _convert_quad_to_hbb_xyhw(self, quad: Any) -> List[int]:
-        """Convert a 4-point quadrilateral to HBB in [x, y, h, w] order.
+    def _convert_quad_to_hbb_xywh(self, quad: Any) -> List[int]:
+        """Convert a 4-point quadrilateral to HBB in [x, y, w, h] order.
         EasyOCR returns [[x1,y1],[x2,y2],[x3,y3],[x4,y4]].
         """
         try:
@@ -251,7 +254,7 @@ class OptimizedProcessingService:
             h = max_y - min_y
             if w < 0: w = 0
             if h < 0: h = 0
-            return [min_x, min_y, h, w]
+            return [min_x, min_y, w, h]
         except Exception:
             # Fallback safe box
             return [0, 0, 0, 0]
@@ -307,13 +310,13 @@ class OptimizedProcessingService:
                 logger.warning(f"Table T2T generation failed: {e}")
         return ""
 
-    def _collect_text_in_region(self, region_xyhw: List[int], text_elements: List[Dict[str, Any]]) -> str:
-        """Collect OCR text within a region bbox [x,y,h,w] and concatenate in reading order."""
-        x, y, h, w = region_xyhw
+    def _collect_text_in_region(self, region_xywh: List[int], text_elements: List[Dict[str, Any]]) -> str:
+        """Collect OCR text within a region bbox [x,y,w,h] and concatenate in reading order."""
+        x, y, w, h = region_xywh
         lines = []
         for te in text_elements:
             bx = te.get('bbox', [0, 0, 0, 0])
-            tx, ty, th, tw = bx
+            tx, ty, tw, th = bx
             if tx >= x and ty >= y and tx + tw <= x + w and ty + th <= y + h:
                 if te.get('text'):
                     lines.append(te['text'])
@@ -372,6 +375,8 @@ class OptimizedProcessingService:
             refined = []
             for el in layout_elements:
                 x, y, h, w = el.get('bbox', [0, 0, 0, 0])
+                # bbox is [x,y,w,h]
+                x, y, w, h = el.get('bbox', [0, 0, 0, 0])
                 crop = image_bgr[y:y+h, x:x+w]
                 if crop is None or crop.size == 0:
                     refined.append(el)
@@ -382,7 +387,7 @@ class OptimizedProcessingService:
                 words, boxes = [], []
                 for te in text_elements:
                     bx = te.get('bbox', [0, 0, 0, 0])
-                    tx, ty, th, tw = bx
+                    tx, ty, tw, th = bx
                     if tx >= x and ty >= y and tx + tw <= x + w and ty + th <= y + h:
                         if te.get('text'):
                             words.append(te['text'])
@@ -591,8 +596,15 @@ class OptimizedProcessingService:
             # Convert to PIL for YOLO
             pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             
-            # Run YOLOv8x inference on GPU with explicit thresholds
-            results = self.models['yolo'](pil_image, device=self.device, conf=0.25, iou=0.45, imgsz=1024)
+            # Run YOLO inference on GPU with tuned thresholds (class-aware NMS)
+            results = self.models['yolo'](
+                pil_image,
+                device=self.device,
+                conf=0.35,
+                iou=0.50,
+                imgsz=1024,
+                agnostic_nms=False
+            )
             
             # Process results
             layout_elements = []
@@ -626,11 +638,14 @@ class OptimizedProcessingService:
                         except Exception:
                             model_num_classes = None
                         label = self._normalize_ps05_label(label, class_id, model_num_classes)
+                        # Skip background detections
+                        if label == 'Background':
+                            continue
                         
-                        # Standardize to [x, y, h, w]
+                        # Standardize to [x, y, w, h]
                         layout_elements.append({
                             "type": label,
-                            "bbox": [int(x1), int(y1), int(y2 - y1), int(x2 - x1)],
+                            "bbox": [int(x1), int(y1), int(x2 - x1), int(y2 - y1)],
                             "confidence": float(confidence),
                             "class_id": class_id
                         })
@@ -693,11 +708,11 @@ class OptimizedProcessingService:
                         # Map to closest target language
                         language = 'en'  # Default to English
                     
-                    # Convert EasyOCR quad bbox to HBB [x, y, h, w]
-                    hbb_xyhw = self._convert_quad_to_hbb_xyhw(bbox)
+                    # Convert EasyOCR quad bbox to HBB [x, y, w, h]
+                    hbb_xywh = self._convert_quad_to_hbb_xywh(bbox)
                     text_elements.append({
                         "text": text,
-                        "bbox": hbb_xyhw,
+                        "bbox": hbb_xywh,
                         "confidence": confidence,
                         "language": language
                     })
@@ -762,6 +777,8 @@ class OptimizedProcessingService:
         try:
             base_img = cv2.imread(image_file)
             if base_img is not None:
+                # Align refinement to deskewed space used by detection/OCR
+                base_img = self._preprocess_image(base_img)
                 stage1_layout = self._refine_layout_with_layoutlm(base_img, stage1_layout, stage2_text)
         except Exception as e:
             logger.warning(f"Layout refinement error: {e}")
@@ -787,9 +804,11 @@ class OptimizedProcessingService:
         try:
             base_image = cv2.imread(image_file)
             if base_image is not None:
+                # Align caption crops to deskewed coordinate space
+                base_image = self._preprocess_image(base_image)
                 for el in elements:
                     if el.get("type") in ["Table", "Figure"] and isinstance(el.get("bbox"), list):
-                        x, y, h, w = el["bbox"]
+                        x, y, w, h = el["bbox"]
                         if w > 0 and h > 0:
                             crop = base_image[y:y+h, x:x+w]
                             if crop is not None and crop.size > 0:
