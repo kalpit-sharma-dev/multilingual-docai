@@ -32,7 +32,7 @@ def load_config(config_path: str) -> Dict:
         logger.error(f"Error loading config: {e}")
         return {}
 
-def train_yolo_model(config: Dict, dataset_yaml: str, output_dir: str, epochs: int = 50) -> bool:
+def train_yolo_model(config: Dict, dataset_yaml: str, output_dir: str, epochs: int = 50, weights: str = "") -> bool:
     """Train YOLOv8 model for layout detection.
     
     Args:
@@ -81,8 +81,18 @@ def train_yolo_model(config: Dict, dataset_yaml: str, output_dir: str, epochs: i
             logger.error("❌ YOLOv8 not available. Install with: pip install ultralytics")
             return False
         
-        # Load YOLOv8 model
-        model = YOLO('yolov8x.pt')  # Load pre-trained YOLOv8x
+        # Resolve starting weights
+        default_layout_weights = Path("models/layout_yolo_6class.pt")
+        if not weights:
+            if default_layout_weights.exists():
+                weights = str(default_layout_weights)
+                logger.info(f"🏁 Using default 6-class layout weights: {weights}")
+            else:
+                weights = 'yolov8x.pt'
+                logger.info("🏁 Defaulting to COCO weights 'yolov8x.pt' (consider providing 6-class weights)")
+
+        # Load YOLOv8 model from weights
+        model = YOLO(weights)
         
         # Train the model
         logger.info("🚀 Starting training...")
@@ -144,6 +154,7 @@ def main():
     parser.add_argument("--data", required=True, help="Dataset YAML file path")
     parser.add_argument("--output", default="models", help="Output directory")
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
+    parser.add_argument("--weights", type=str, default="", help="Starting weights path (default: models/layout_yolo_6class.pt if exists, else yolov8x.pt)")
     
     args = parser.parse_args()
     
@@ -155,7 +166,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Start training
-    success = train_yolo_model(config, args.data, str(output_dir), args.epochs)
+    success = train_yolo_model(config, args.data, str(output_dir), args.epochs, args.weights)
     
     if success:
         logger.info("🎉 Training completed successfully!")
