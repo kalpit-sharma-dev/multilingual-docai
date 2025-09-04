@@ -32,7 +32,18 @@ def load_config(config_path: str) -> Dict:
         logger.error(f"Error loading config: {e}")
         return {}
 
-def train_yolo_model(config: Dict, dataset_yaml: str, output_dir: str, epochs: int = 50, weights: str = "") -> bool:
+def train_yolo_model(
+    config: Dict,
+    dataset_yaml: str,
+    output_dir: str,
+    epochs: int = 50,
+    weights: str = "",
+    imgsz: int = 640,
+    batch_override: int = 0,
+    lr0_override: float = 0.0,
+    workers: int = 2,
+    device_str: str = "0"
+) -> bool:
     """Train YOLOv8 model for layout detection.
     
     Args:
@@ -57,9 +68,9 @@ def train_yolo_model(config: Dict, dataset_yaml: str, output_dir: str, epochs: i
             device = torch.device('cpu')
             logger.warning("⚠️  CUDA not available, using CPU for training")
         
-        # Get training parameters
-        batch_size = config.get('training', {}).get('batch_size', 4)
-        learning_rate = config.get('training', {}).get('learning_rate', 0.001)
+        # Get training parameters (CLI overrides > config > defaults)
+        batch_size = batch_override or config.get('training', {}).get('batch_size', 8)
+        learning_rate = lr0_override or config.get('training', {}).get('learning_rate', 0.001)
         
         # Adjust batch size based on GPU memory
         if torch.cuda.is_available():
@@ -69,7 +80,7 @@ def train_yolo_model(config: Dict, dataset_yaml: str, output_dir: str, epochs: i
         
         logger.info(f"🎯 Starting YOLOv8 training for {epochs} epochs")
         logger.info(f"📁 Dataset: {dataset_yaml}")
-        logger.info(f"⚙️  Batch size: {batch_size}, Learning rate: {learning_rate}")
+        logger.info(f"⚙️  Batch size: {batch_size}, Learning rate: {learning_rate}, ImgSz: {imgsz}, Workers: {workers}")
         logger.info(f"💻 Output directory: {output_dir}")
         logger.info(f"🖥️  Device: {device}")
         
@@ -96,12 +107,16 @@ def train_yolo_model(config: Dict, dataset_yaml: str, output_dir: str, epochs: i
         
         # Train the model
         logger.info("🚀 Starting training...")
+        # Ultralytics accepts device as int/str; prefer '0' for first GPU
+        device_arg = device_str if torch.cuda.is_available() else 'cpu'
         results = model.train(
             data=dataset_yaml,
             epochs=epochs,
             batch=batch_size,
-            imgsz=640,
-            device=device,
+            imgsz=imgsz,
+            device=device_arg,
+            workers=workers,
+            amp=True,
             project=output_dir,
             name='layout_detection',
             save=True,
@@ -155,6 +170,11 @@ def main():
     parser.add_argument("--output", default="models", help="Output directory")
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--weights", type=str, default="", help="Starting weights path (default: models/layout_yolo_6class.pt if exists, else yolov8x.pt)")
+    parser.add_argument("--imgsz", type=int, default=640, help="Image size for training")
+    parser.add_argument("--batch", type=int, default=0, help="Override batch size (0 = auto/config)")
+    parser.add_argument("--lr0", type=float, default=0.0, help="Override initial learning rate (0 = config default)")
+    parser.add_argument("--workers", type=int, default=2, help="DataLoader workers (set low on Windows)")
+    parser.add_argument("--device", type=str, default="0", help="CUDA device string/index (e.g., '0' or 'cpu')")
     
     args = parser.parse_args()
     
@@ -166,7 +186,18 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Start training
-    success = train_yolo_model(config, args.data, str(output_dir), args.epochs, args.weights)
+    success = train_yolo_model(
+        config,
+        args.data,
+        str(output_dir),
+        args.epochs,
+        args.weights,
+        imgsz=args.imgsz,
+        batch_override=args.batch,
+        lr0_override=args.lr0,
+        workers=args.workers,
+        device_str=args.device
+    )
     
     if success:
         logger.info("🎉 Training completed successfully!")
