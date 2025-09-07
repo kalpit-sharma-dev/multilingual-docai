@@ -596,18 +596,30 @@ class OptimizedProcessingService:
             # Convert to PIL for YOLO
             pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
             
-            # Run YOLO inference on GPU with tuned thresholds (class-aware NMS)
+            # Thresholds configurable via env
+            try:
+                conf_thr = float(os.environ.get("YOLO_CONF", "0.35"))
+            except Exception:
+                conf_thr = 0.35
+            try:
+                iou_thr = float(os.environ.get("YOLO_IOU", "0.50"))
+            except Exception:
+                iou_thr = 0.50
+            agnostic = os.environ.get("YOLO_AGNOSTIC_NMS", "0") == "1"
+
+            # Run YOLO inference on GPU with tuned thresholds (class-aware NMS by default)
             results = self.models['yolo'](
                 pil_image,
                 device=self.device,
-                conf=0.35,
-                iou=0.50,
+                conf=conf_thr,
+                iou=iou_thr,
                 imgsz=1024,
-                agnostic_nms=False
+                agnostic_nms=agnostic
             )
             
             # Process results
             layout_elements = []
+            h_img, w_img = image.shape[:2]
             for result in results:
                 boxes = result.boxes
                 if boxes is not None:
@@ -642,10 +654,21 @@ class OptimizedProcessingService:
                         if label == 'Background':
                             continue
                         
+                        # Clip to image bounds
+                        x1 = max(0, min(int(x1), w_img - 1))
+                        y1 = max(0, min(int(y1), h_img - 1))
+                        x2 = max(0, min(int(x2), w_img - 1))
+                        y2 = max(0, min(int(y2), h_img - 1))
+                        w = max(0, int(x2 - x1))
+                        h = max(0, int(y2 - y1))
+                        # Drop tiny/degenerate boxes
+                        if w < 2 or h < 2:
+                            continue
+
                         # Standardize to [x, y, w, h]
                         layout_elements.append({
                             "type": label,
-                            "bbox": [int(x1), int(y1), int(x2 - x1), int(y2 - y1)],
+                            "bbox": [int(x1), int(y1), int(w), int(h)],
                             "confidence": float(confidence),
                             "class_id": class_id
                         })

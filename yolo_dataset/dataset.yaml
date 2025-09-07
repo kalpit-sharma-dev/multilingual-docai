@@ -1,0 +1,12 @@
+names:
+- Background
+- Text
+- Title
+- List
+- Table
+- Figure
+nc: 6
+path: C:\multilingual-docai\yolo_dataset
+test: test/images
+train: train/images
+val: val/images
