@@ -140,7 +140,48 @@ def process_image_and_annotations(image_path: str, annotations: Dict, output_dir
             if not wrote_any:
                 # Ensure empty file exists
                 f.write("")
-        
+
+        # Also emit Stage-1 JSON output alongside YOLO labels
+        try:
+            annotations_dir = output_dir / split / "annotations"
+            annotations_dir.mkdir(parents=True, exist_ok=True)
+
+            # Build JSON elements from original absolute bboxes
+            id_to_name = {0: 'Background', 1: 'Text', 2: 'Title', 3: 'List', 4: 'Table', 5: 'Figure'}
+            elements = []
+            for cname_or_id, bbox in iter_annotation_entries(annotations):
+                if isinstance(cname_or_id, str):
+                    class_name = cname_or_id
+                    class_id = class_mapping.get(class_name, 0)
+                else:
+                    class_id = int(cname_or_id)
+                    class_name = id_to_name.get(class_id, 'Background')
+                # Expect bbox as [x, y, w, h]; convert to [x, y, h, w]
+                try:
+                    x, y, w, h = [int(float(bbox[0])), int(float(bbox[1])), int(float(bbox[2])), int(float(bbox[3]))]
+                except Exception:
+                    continue
+                elements.append({
+                    "class": class_name,
+                    "class_id": class_id,
+                    "bbox": [x, y, h, w],
+                    "score": 1.0
+                })
+
+            json_payload = {
+                "metadata": {
+                    "source": image_name,
+                    "language": "en"
+                },
+                "elements": elements
+            }
+
+            json_out = annotations_dir / f"{Path(image_path).stem}.json"
+            with open(json_out, 'w', encoding='utf-8') as jf:
+                json.dump(json_payload, jf, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"Failed to write Stage-1 JSON for {image_path}: {e}")
+
         return True
         
     except Exception as e:
