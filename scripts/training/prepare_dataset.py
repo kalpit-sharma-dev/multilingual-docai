@@ -9,6 +9,7 @@ Creates train/val/test splits and generates dataset.yaml file.
 import argparse
 import json
 import logging
+import yaml
 import random
 import shutil
 from pathlib import Path
@@ -293,17 +294,33 @@ def prepare_dataset(data_dir: str, output_dir: str, train_ratio: float = 0.7,
         
         logger.info(f"Found {len(image_files)} image files")
         
-        # Class mapping for PS-05 Stage 1
-        # Explicit 6-class mapping
-        class_mapping = {
-            'Background': 0,
-            'Text': 1,
-            'Title': 2,
-            'List': 3,
-            'Table': 4,
-            'Figure': 5
-        }
-        class_names = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
+        # Class mapping for PS-05 Stage 1 loaded from config (fallback to default)
+        class_mapping = {}
+        class_names = []
+        try:
+            cfg_path = Path("configs/ps05_config.yaml")
+            if cfg_path.exists():
+                with open(cfg_path, 'r', encoding='utf-8') as cf:
+                    cfg = yaml.safe_load(cf) or {}
+                classes = (
+                    cfg.get('models', {})
+                       .get('layout', {})
+                       .get('classes', ['Background', 'Text', 'Title', 'List', 'Table', 'Figure'])
+                )
+                class_names = list(classes)
+                class_mapping = {name: idx for idx, name in enumerate(class_names)}
+            else:
+                raise FileNotFoundError("ps05_config.yaml not found")
+        except Exception:
+            class_mapping = {
+                'Background': 0,
+                'Text': 1,
+                'Title': 2,
+                'List': 3,
+                'Table': 4,
+                'Figure': 5
+            }
+            class_names = ['Background', 'Text', 'Title', 'List', 'Table', 'Figure']
         
         # Shuffle and split data
         random.shuffle(image_files)

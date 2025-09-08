@@ -23,85 +23,34 @@ import os
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scripts.prepare_dataset import prepare_dataset
-# from src.models.layout_detector import LayoutDetector  # Commented out for now
+# Deprecated: prefer scripts/training/train_yolo.py; keep wrapper compatibility
+from scripts.training.prepare_dataset import prepare_dataset
+from scripts.training.train_yolo import train_yolo_model, load_config as load_config_base
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def load_config(config_path: str) -> Dict:
-    """Load training configuration."""
-    try:
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
-    except Exception as e:
-        logger.error(f"Error loading config: {e}")
-        return {}
+    return load_config_base(config_path)
 
 def train_stage1_model(config: Dict, dataset_yaml: str, output_dir: str) -> bool:
-    """Train the Stage 1 layout detection model.
-    
-    Args:
-        config: Training configuration
-        dataset_yaml: Path to dataset YAML file
-        output_dir: Output directory for model
-        
-    Returns:
-        True if training successful, False otherwise
-    """
-    try:
-        # Check GPU availability
-        if torch.cuda.is_available():
-            device = torch.device('cuda:0')
-            gpu_name = torch.cuda.get_device_name(0)
-            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
-            logger.info(f"🚀 GPU Available: {gpu_name}")
-            logger.info(f"💾 GPU Memory: {gpu_memory:.2f} GB")
-            logger.info(f"🔧 CUDA Version: {torch.version.cuda}")
-        else:
-            device = torch.device('cpu')
-            logger.warning("⚠️  CUDA not available, using CPU for training")
-        
-        # Initialize layout detector
-        detector = LayoutDetector()
-        
-        # Get training parameters
-        epochs = config.get('training', {}).get('epochs', 100)
-        batch_size = config.get('training', {}).get('batch_size', 8)
-        learning_rate = config.get('training', {}).get('learning_rate', 0.001)
-        
-        # Adjust batch size based on GPU memory
-        if torch.cuda.is_available():
-            if gpu_memory < 6:  # RTX 2070 has 8GB, but we'll be conservative
-                batch_size = min(batch_size, 4)
-                logger.info(f"📊 Adjusted batch size to {batch_size} for GPU memory constraints")
-        
-        logger.info(f"🎯 Starting Stage 1 training for {epochs} epochs")
-        logger.info(f"📁 Dataset: {dataset_yaml}")
-        logger.info(f"⚙️  Batch size: {batch_size}, Learning rate: {learning_rate}")
-        logger.info(f"💻 Output directory: {output_dir}")
-        logger.info(f"🖥️  Device: {device}")
-        
-        # Train the model
-        results = detector.train(
-            data_yaml=dataset_yaml,
-            epochs=epochs,
-            batch_size=batch_size,
-            learning_rate=learning_rate,
-            output_dir=output_dir
-        )
-        
-        if results is not None:
-            logger.info("✅ Stage 1 training completed successfully!")
-            return True
-        else:
-            logger.error("❌ Stage 1 training failed!")
-            return False
-            
-    except Exception as e:
-        logger.error(f"❌ Stage 1 training failed: {e}")
-        return False
+    """Wrapper around YOLO trainer; prefer this over legacy path."""
+    epochs = config.get('training', {}).get('epochs', 100)
+    batch = config.get('training', {}).get('batch_size', 8)
+    lr0 = config.get('training', {}).get('learning_rate', 0.001)
+    return train_yolo_model(
+        config,
+        dataset_yaml,
+        output_dir,
+        epochs=epochs,
+        weights="",
+        imgsz=640,
+        batch_override=batch,
+        lr0_override=lr0,
+        workers=2,
+        device_str="0",
+    )
 
 def validate_stage1_model(config: Dict, dataset_yaml: str, model_path: str) -> Dict:
     """Validate the trained Stage 1 model.
