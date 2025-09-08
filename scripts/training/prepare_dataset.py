@@ -12,7 +12,7 @@ import logging
 import random
 import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable, Any
 import cv2
 import numpy as np
 
@@ -42,6 +42,37 @@ def convert_bbox_to_yolo(bbox: List[float], img_width: int, img_height: int) -> 
     height = h / img_height
     
     return [x_center, y_center, width, height]
+
+def iter_annotation_entries(annotations: Dict) -> Iterable[Tuple[str, List[float]]]:
+    """Yield (class_name, bbox_xywh) from various supported JSON formats.
+    Supports keys: 'annotations' (list of {category_name/category_id, bbox}),
+    'elements' or 'layout_elements' (list of {type, bbox}).
+    """
+    # Format A: { annotations: [ {category_name|category_id, bbox:[x,y,w,h]}, ... ] }
+    if isinstance(annotations.get('annotations'), list):
+        for ann in annotations['annotations']:
+            cname = ann.get('category_name')
+            cid = ann.get('category_id')
+            bbox = ann.get('bbox')
+            if bbox and (cname is not None or cid is not None):
+                yield (cname if cname is not None else cid, bbox)
+        return
+    # Format B: { elements: [ {type, bbox:[x,y,w,h]}, ... ] }
+    if isinstance(annotations.get('elements'), list):
+        for el in annotations['elements']:
+            cname = el.get('type')
+            bbox = el.get('bbox')
+            if cname and bbox:
+                yield (cname, bbox)
+        return
+    # Format C: { layout_elements: [ {type, bbox:[x,y,w,h]}, ... ] }
+    if isinstance(annotations.get('layout_elements'), list):
+        for el in annotations['layout_elements']:
+            cname = el.get('type')
+            bbox = el.get('bbox')
+            if cname and bbox:
+                yield (cname, bbox)
+        return
 
 def process_image_and_annotations(image_path: str, annotations: Dict, output_dir: Path, 
                                 split: str, class_mapping: Dict[str, int]) -> bool:
@@ -83,35 +114,63 @@ def process_image_and_annotations(image_path: str, annotations: Dict, output_dir
         
         # Process annotations
         with open(label_path, 'w') as f:
-            for ann in annotations.get('annotations', []):
-                # Support both name and id
-                category_name = ann.get('category_name')
-                if category_name in class_mapping:
-                    class_id = class_mapping[category_name]
+            wrote_any = False
+            for cname_or_id, bbox in iter_annotation_entries(annotations):
+                # Map class
+                if isinstance(cname_or_id, str):
+                    mapped = class_mapping.get(cname_or_id, None)
                 else:
-                    category_id = ann.get('category_id', 1)
                     id_to_name = {
-                        0: 'Background',
-                        1: 'Text',
-                        2: 'Title',
-                        3: 'List',
-                        4: 'Table',
-                        5: 'Figure'
+                        0: 'Background', 1: 'Text', 2: 'Title', 3: 'List', 4: 'Table', 5: 'Figure'
                     }
-                    class_id = class_mapping.get(id_to_name.get(category_id, 'Text'), 1)
-                
+                    mapped = class_mapping.get(id_to_name.get(int(cname_or_id), 'Text'), None)
+                if mapped is None:
+                    continue
+                if mapped == 0:  # Skip Background for labels
+                    continue
                 # Convert bbox to YOLO format
-                bbox = ann.get('bbox', [0, 0, 1, 1])
-                yolo_bbox = convert_bbox_to_yolo(bbox, img_width, img_height)
-                
+                try:
+                    yolo_bbox = convert_bbox_to_yolo([float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])], img_width, img_height)
+                except Exception:
+                    continue
                 # Write label line: class_id x_center y_center width height
-                line = f"{class_id} {' '.join([f'{coord:.6f}' for coord in yolo_bbox])}\n"
+                line = f"{mapped} {' '.join([f'{coord:.6f}' for coord in yolo_bbox])}\n"
                 f.write(line)
+                wrote_any = True
+            if not wrote_any:
+                # Ensure empty file exists
+                f.write("")
         
         return True
         
     except Exception as e:
         logger.error(f"Error processing {image_path}: {e}")
+        return False
+
+def copy_image_with_empty_label(image_path: str, output_dir: Path, split: str) -> bool:
+    """Copy image and create an empty YOLO label file when no annotations are present.
+    This ensures Ultralytics can load datasets where some images have no objects.
+    """
+    try:
+        # Create output directories
+        images_dir = output_dir / split / "images"
+        labels_dir = output_dir / split / "labels"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        labels_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy image
+        image_name = Path(image_path).name
+        output_image_path = images_dir / image_name
+        shutil.copy2(image_path, output_image_path)
+
+        # Create empty label
+        label_name = Path(image_path).stem + ".txt"
+        label_path = labels_dir / label_name
+        with open(label_path, 'w') as f:
+            f.write("")
+        return True
+    except Exception as e:
+        logger.error(f"Error copying image or creating empty label for {image_path}: {e}")
         return False
 
 def create_dataset_yaml(output_dir: Path, class_names: List[str]) -> str:
@@ -171,7 +230,7 @@ def prepare_dataset(data_dir: str, output_dir: str, train_ratio: float = 0.7,
         output_path.mkdir(parents=True, exist_ok=True)
         
         # Find all image files
-        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff']
+        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif']
         image_files = []
         
         # Check if we have enhanced processed structure (images/ subdirectory)
@@ -179,13 +238,13 @@ def prepare_dataset(data_dir: str, output_dir: str, train_ratio: float = 0.7,
         if images_subdir.exists():
             # Enhanced processed structure
             for ext in image_extensions:
-                image_files.extend(images_subdir.glob(f"*{ext}"))
-                image_files.extend(images_subdir.glob(f"*{ext.upper()}"))
+                image_files.extend(images_subdir.rglob(f"*{ext}"))
+                image_files.extend(images_subdir.rglob(f"*{ext.upper()}"))
         else:
             # Direct structure
             for ext in image_extensions:
-                image_files.extend(data_path.glob(f"*{ext}"))
-                image_files.extend(data_path.glob(f"*{ext.upper()}"))
+                image_files.extend(data_path.rglob(f"*{ext}"))
+                image_files.extend(data_path.rglob(f"*{ext.upper()}"))
         
         if not image_files:
             logger.error(f"No image files found in {data_dir}")
@@ -246,7 +305,10 @@ def prepare_dataset(data_dir: str, output_dir: str, train_ratio: float = 0.7,
                                                    split_name, class_mapping):
                         processed_count += 1
                 else:
-                    logger.warning(f"No annotations found for {image_file}")
+                    # Still include the image with an empty label so the loader doesn't fail
+                    logger.warning(f"No annotations found for {image_file}; creating empty label.")
+                    if copy_image_with_empty_label(str(image_file), output_path, split_name):
+                        processed_count += 1
         
         logger.info(f"Successfully processed {processed_count} images")
         
