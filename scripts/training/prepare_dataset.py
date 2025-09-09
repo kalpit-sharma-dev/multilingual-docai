@@ -229,12 +229,17 @@ def create_dataset_yaml(output_dir: Path, class_names: List[str]) -> str:
     
     dataset_config = {
         'path': str(output_dir.absolute()),
-        'train': 'train/images',
-        'val': 'val/images',
-        'test': 'test/images',
         'nc': len(class_names),
         'names': class_names
     }
+
+    # Only include splits that actually exist
+    if (output_dir / 'train' / 'images').exists():
+        dataset_config['train'] = 'train/images'
+    if (output_dir / 'val' / 'images').exists():
+        dataset_config['val'] = 'val/images'
+    if (output_dir / 'test' / 'images').exists():
+        dataset_config['test'] = 'test/images'
     
     try:
         import yaml

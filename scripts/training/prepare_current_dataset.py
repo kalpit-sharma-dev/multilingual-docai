@@ -1,45 +1,37 @@
 #!/usr/bin/env python3
 """
-Deprecated: Use scripts/training/prepare_dataset.py instead.
+Deprecated wrapper: use scripts/training/prepare_dataset.py instead.
 
-This script is retained as a thin wrapper for backward compatibility.
-It forwards to prepare_dataset.prepare_dataset with equivalent defaults.
+This file is kept to avoid breaking existing workflows/imports.
+It forwards to the canonical data preparer.
 """
 
-import json
-import os
-from pathlib import Path
-import shutil
-from typing import Dict, List
+import argparse
 import logging
+from pathlib import Path
 
 from scripts.training.prepare_dataset import prepare_dataset
 
-# Configure logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class DatasetPreparer:
-    """Deprecated wrapper that forwards to prepare_dataset.prepare_dataset."""
-
-    def __init__(self, input_dir: str = "data/train", output_dir: str = "data/yolo_dataset"):
-        self.input_dir = input_dir
-        self.output_dir = output_dir
-
-    def prepare_dataset(self) -> bool:
-        # Forward to canonical implementation
-        result = prepare_dataset(self.input_dir, self.output_dir)
-        return bool(result)
 
 def main():
-    """Main function."""
-    preparer = DatasetPreparer()
-    success = preparer.prepare_dataset()
-    if success:
-        logger.info("🎉 Dataset is ready for training! (wrapper)")
-        logger.info("📁 See output directory for dataset.yaml")
+    parser = argparse.ArgumentParser(description="(Deprecated) Prepare dataset wrapper")
+    parser.add_argument('--data', required=True, help='Input data directory')
+    parser.add_argument('--output', required=True, help='Output directory')
+    args = parser.parse_args()
+
+    logger.warning("prepare_current_dataset.py is deprecated; forwarding to prepare_dataset.py")
+    result = prepare_dataset(args.data, args.output)
+    if result:
+        logger.info("Dataset prepared successfully (wrapper)")
     else:
-        logger.error("❌ Dataset preparation failed! (wrapper)")
+        logger.error("Dataset preparation failed (wrapper)")
+
 
 if __name__ == "__main__":
     main()
+
+

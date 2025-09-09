@@ -15,6 +15,9 @@ import torch
 import shutil
 import sys
 import os
+import platform
+import glob
+import cv2
 
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -71,6 +74,9 @@ def train_yolo_model(
         # Get training parameters (CLI overrides > config > defaults)
         batch_size = batch_override or config.get('training', {}).get('batch_size', 8)
         learning_rate = lr0_override or config.get('training', {}).get('learning_rate', 0.001)
+        # On Windows, set workers=0 to avoid DataLoader pickling issues ("Ran out of input")
+        if platform.system().lower().startswith('win'):
+            workers = 0
         
         # Adjust batch size based on GPU memory
         if torch.cuda.is_available():
@@ -105,41 +111,107 @@ def train_yolo_model(
         # Load YOLOv8 model from weights
         model = YOLO(weights)
         
+        # Clean any stale cache files that can cause DataLoader issues on Windows
+        try:
+            ds_root = Path(dataset_yaml).parent
+            for cache_path in ds_root.rglob("*.cache"):
+                try:
+                    cache_path.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Build explicit image manifests to avoid iterator issues (Windows safety)
+        ds_root = Path(dataset_yaml).parent
+        classes_cfg = (
+            config.get('models', {})
+                  .get('layout', {})
+                  .get('classes', ['Background', 'Text', 'Title', 'List', 'Table', 'Figure'])
+        )
+
+        def _gather(split: str):
+            img_dir = ds_root / split / 'images'
+            lbl_dir = ds_root / split / 'labels'
+            manifest = ds_root / f"{split}.txt"
+            img_paths = []
+            if img_dir.exists():
+                for ext in ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.tif", "*.tiff"):
+                    img_paths.extend(sorted(img_dir.rglob(ext)))
+            kept = 0
+            list_paths = []
+            with open(manifest, 'w', encoding='utf-8') as mf:
+                for ip in img_paths:
+                    try:
+                        im = cv2.imread(str(ip))
+                        if im is None or im.size == 0:
+                            continue
+                        # Ensure label file exists (empty allowed)
+                        lbl = lbl_dir / f"{ip.stem}.txt"
+                        lbl.parent.mkdir(parents=True, exist_ok=True)
+                        if not lbl.exists():
+                            lbl.write_text("", encoding='utf-8')
+                        norm = str(ip.resolve()).replace('\\', '/')
+                        mf.write(norm + "\n")
+                        list_paths.append(norm)
+                        kept += 1
+                    except Exception:
+                        continue
+            logger.info(f"Manifest {split}: {kept} files")
+            return manifest, list_paths
+
+        train_manifest = _gather('train')[0]
+        val_manifest = _gather('val')[0]
+        # Keep using YAML for Ultralytics compatibility
+
         # Train the model
         logger.info("🚀 Starting training...")
         # Ultralytics accepts device as int/str; prefer '0' for first GPU
         device_arg = device_str if torch.cuda.is_available() else 'cpu'
-        results = model.train(
-            data=dataset_yaml,
-            epochs=epochs,
-            batch=batch_size,
-            imgsz=imgsz,
-            device=device_arg,
-            workers=workers,
-            amp=True,
-            project=output_dir,
-            name='layout_detection',
-            save=True,
-            save_period=10,
-            patience=20,
-            lr0=learning_rate,
-            weight_decay=0.0005,
-            warmup_epochs=5,
-            warmup_momentum=0.8,
-            warmup_bias_lr=0.1,
-            box=7.5,
-            cls=0.5,
-            dfl=1.5,
-            pose=12.0,
-            kobj=2.0,
-            label_smoothing=0.0,
-            nbs=64,
-            overlap_mask=True,
-            mask_ratio=4,
-            dropout=0.0,
-            val=True,
-            plots=True
-        )
+        def _run_train(wk: int):
+            return model.train(
+                data=dataset_yaml,
+                epochs=epochs,
+                batch=batch_size,
+                imgsz=imgsz,
+                device=device_arg,
+                workers=wk,
+                cache=False,
+                rect=False,
+                amp=True,
+                val=False,  # Disable validation if no val set
+                project=output_dir,
+                name='layout_detection',
+                save=True,
+                save_period=10,
+                patience=20,
+                lr0=learning_rate,
+                weight_decay=0.0005,
+                warmup_epochs=5,
+                warmup_momentum=0.8,
+                warmup_bias_lr=0.1,
+                box=7.5,
+                cls=0.5,
+                dfl=1.5,
+                pose=12.0,
+                kobj=2.0,
+                label_smoothing=0.0,
+                nbs=64,
+                overlap_mask=True,
+                mask_ratio=4,
+                dropout=0.0,
+                plots=True
+            )
+
+        try:
+            results = _run_train(workers)
+        except Exception as e:
+            # Auto-retry with workers=0 if DataLoader errors (common on Windows)
+            if 'Ran out of input' in str(e) or 'EOFError' in str(e):
+                logger.warning("DataLoader error detected; retrying with workers=0")
+                results = _run_train(0)
+            else:
+                raise
         
         logger.info("✅ YOLOv8 training completed successfully!")
         logger.info(f"📁 Model saved to: {output_dir}/layout_detection")

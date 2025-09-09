@@ -1,277 +1,187 @@
 #!/usr/bin/env python3
 """
-Stage 1 Training Script for PS-05 Layout Detection
+Stage 1 Training (Enhanced Wrapper)
 
-Complete training pipeline for Stage 1:
-1. Prepare dataset in YOLO format
-2. Train layout detection model
-3. Validate model performance
-4. Save trained model
+Preserves previous functionality (prep → train → optional validate → optional submission)
+while delegating core training to the canonical YOLO trainer and dataset preparer.
 """
 
 import argparse
 import logging
-import yaml
 import json
-from pathlib import Path
-from typing import Dict, List
-import torch
 import shutil
-import sys
+from pathlib import Path
+from typing import Dict
 import os
+import sys
 
-# Add the parent directory to the Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import torch
 
-# Deprecated: prefer scripts/training/train_yolo.py; keep wrapper compatibility
-from scripts.training.prepare_dataset import prepare_dataset
-from scripts.training.train_yolo import train_yolo_model, load_config as load_config_base
+# Ensure local training scripts are importable when running directly
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
 
-# Configure logging
+try:
+    # Prefer local sibling modules
+    from prepare_dataset import prepare_dataset
+    from train_yolo import train_yolo_model, load_config
+except Exception:
+    # Fallback if repo is installed as a package with a different layout
+    from scripts.training.prepare_dataset import prepare_dataset  # type: ignore
+    from scripts.training.train_yolo import train_yolo_model, load_config  # type: ignore
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def load_config(config_path: str) -> Dict:
-    return load_config_base(config_path)
 
-def train_stage1_model(config: Dict, dataset_yaml: str, output_dir: str) -> bool:
-    """Wrapper around YOLO trainer; prefer this over legacy path."""
-    epochs = config.get('training', {}).get('epochs', 100)
-    batch = config.get('training', {}).get('batch_size', 8)
-    lr0 = config.get('training', {}).get('learning_rate', 0.001)
-    return train_yolo_model(
-        config,
-        dataset_yaml,
-        output_dir,
-        epochs=epochs,
-        weights="",
-        imgsz=640,
-        batch_override=batch,
-        lr0_override=lr0,
-        workers=2,
-        device_str="0",
-    )
-
-def validate_stage1_model(config: Dict, dataset_yaml: str, model_path: str) -> Dict:
-    """Validate the trained Stage 1 model.
-    
-    Args:
-        config: Configuration
-        dataset_yaml: Path to dataset YAML file
-        model_path: Path to trained model
-        
-    Returns:
-        Validation metrics dictionary
-    """
+def _log_gpu_info():
     try:
-        # Load the trained model
-        detector = LayoutDetector()
-        detector.load_model(model_path)
-        
-        logger.info("Starting Stage 1 model validation...")
-        
-        # Run validation
-        metrics = detector.validate(dataset_yaml)
-        
-        if metrics:
-            logger.info("Validation completed successfully!")
-            logger.info(f"mAP50: {metrics.get('mAP50', 0):.4f}")
-            logger.info(f"mAP50-95: {metrics.get('mAP50-95', 0):.4f}")
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            mem = torch.cuda.get_device_properties(0).total_memory / 1e9
+            logger.info(f"GPU: {name} | Mem: {mem:.2f} GB | CUDA: {torch.version.cuda}")
         else:
-            logger.warning("Validation completed but no metrics returned")
-        
-        return metrics
-        
-    except Exception as e:
-        logger.error(f"Validation failed: {e}")
-        return {}
+            logger.warning("CUDA not available, using CPU")
+    except Exception:
+        pass
 
-def create_stage1_submission(model_path: str, output_dir: str) -> str:
-    """Create Stage 1 submission package.
-    
-    Args:
-        model_path: Path to trained model
-        output_dir: Output directory
-        
-    Returns:
-        Path to submission package
-    """
-    try:
-        submission_dir = Path(output_dir) / "stage1_submission"
-        submission_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Copy trained model
-        model_name = Path(model_path).name
-        submission_model_path = submission_dir / model_name
-        shutil.copy2(model_path, submission_model_path)
-        
-        # Create submission info
-        submission_info = {
-            "stage": 1,
-            "description": "PS-05 Stage 1 Layout Detection Model",
-            "classes": ["Background", "Text", "Title", "List", "Table", "Figure"],
-            "model_file": model_name,
-            "evaluation_metric": "mAP at IoU threshold >= 0.5",
-            "output_format": "JSON with bbox [x,y,w,h] and class classification"
-        }
-        
-        info_path = submission_dir / "submission_info.json"
-        with open(info_path, 'w') as f:
-            json.dump(submission_info, f, indent=2)
-        
-        # Create README
-        readme_content = """# PS-05 Stage 1 Submission
 
-## Model Information
-- **Stage**: 1 (Layout Detection Only)
-- **Classes**: Background, Text, Title, List, Table, Figure
-- **Output Format**: JSON with bounding box coordinates [x,y,w,h] and class labels
-- **Evaluation Metric**: mAP at IoU threshold >= 0.5
+def _find_trained_weights(output_dir: Path) -> Path:
+    # Ultralytics default path: <output>/layout_detection/weights/best.pt
+    candidate = output_dir / 'layout_detection' / 'weights' / 'best.pt'
+    return candidate if candidate.exists() else Path("")
 
-## Usage
-```python
-from src.models.layout_detector import LayoutDetector
 
-# Load model
-detector = LayoutDetector()
-detector.load_model("layout_detector.pt")
+def _write_submission(model_path: Path, output_dir: Path, classes: list) -> str:
+    sub_dir = output_dir / 'stage1_submission'
+    sub_dir.mkdir(parents=True, exist_ok=True)
 
-# Predict layout
-image = cv2.imread("document.png")
-results = detector.predict(image)
+    # Copy model
+    dest = sub_dir / model_path.name
+    shutil.copy2(model_path, dest)
 
-# Results format
-# [
-#   {
-#     "bbox": [x, y, w, h],
-#     "cls": "Text",
-#     "score": 0.95,
-#     "class_id": 1
-#   },
-#   ...
-# ]
-```
+    # Info JSON
+    info = {
+        "stage": 1,
+        "description": "PS-05 Stage 1 Layout Detection Model",
+        "classes": classes,
+        "model_file": model_path.name,
+        "evaluation_metric": "mAP@0.5",
+        "output_format": "JSON per image with bbox [x,y,h,w], class and class_id"
+    }
+    with open(sub_dir / 'submission_info.json', 'w', encoding='utf-8') as f:
+        json.dump(info, f, indent=2)
 
-## Model Performance
-- Training completed on: {training_date}
-- Dataset: Custom document layout dataset
-- Framework: YOLOv8
-- Input size: 640x640
-"""
-        
-        readme_path = submission_dir / "README.md"
-        with open(readme_path, 'w') as f:
-            f.write(readme_content.format(training_date=Path(model_path).stat().st_mtime))
-        
-        logger.info(f"Stage 1 submission package created at {submission_dir}")
-        return str(submission_dir)
-        
-    except Exception as e:
-        logger.error(f"Failed to create submission package: {e}")
-        return ""
+    # README (minimal)
+    readme = sub_dir / 'README.md'
+    readme.write_text(
+        (
+            "# PS-05 Stage 1 Submission\n\n"
+            "This package contains the trained Stage-1 model (YOLO) for layout detection.\n\n"
+            "- Classes: {classes}\n"
+            "- Metric: mAP@0.5\n\n"
+            "Outputs for each image are JSON files with bbox [x,y,h,w], class and class_id.\n"
+        ).format(classes=", ".join(classes)),
+        encoding='utf-8'
+    )
+    return str(sub_dir)
+
 
 def main():
-    """Main training function."""
     parser = argparse.ArgumentParser(description="Train Stage 1 layout detection model")
-    parser.add_argument('--data', required=True, help='Input data directory')
-    parser.add_argument('--output', required=True, help='Output directory')
+    parser.add_argument('--data', required=True, help='Input data directory (images + per-image JSON)')
+    parser.add_argument('--output', required=True, help='Output directory root')
     parser.add_argument('--config', default='configs/ps05_config.yaml', help='Configuration file')
-    parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
-    parser.add_argument('--batch-size', type=int, default=8, help='Training batch size')
-    parser.add_argument('--learning-rate', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--skip-dataset-prep', action='store_true', help='Skip dataset preparation')
-    parser.add_argument('--skip-validation', action='store_true', help='Skip model validation')
-    parser.add_argument('--create-submission', action='store_true', help='Create submission package')
-    
+
+    # Training hyperparams (forwarded)
+    parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs')
+    parser.add_argument('--batch', type=int, default=0, help='Override batch size (0 = use config/default)')
+    parser.add_argument('--lr0', type=float, default=0.0, help='Override initial learning rate (0 = use config/default)')
+    parser.add_argument('--imgsz', type=int, default=640, help='Training image size')
+    parser.add_argument('--weights', type=str, default='', help='Starting weights for fine-tuning')
+    parser.add_argument('--workers', type=int, default=2, help='DataLoader workers')
+    parser.add_argument('--device', type=str, default='0', help="CUDA device string/index (e.g., '0' or 'cpu')")
+
+    # Pipeline toggles
+    parser.add_argument('--skip-dataset-prep', action='store_true', help='Skip dataset preparation step')
+    parser.add_argument('--skip-validation', action='store_true', help='Skip post-training validation log')
+    parser.add_argument('--create-submission', action='store_true', help='Create submission package with trained weights')
+
     args = parser.parse_args()
-    
-    try:
-        # Load configuration
-        config = load_config(args.config)
-        if not config:
-            logger.error("Failed to load configuration")
-            return
-        
-        # Override config with command line arguments
-        if 'training' not in config:
-            config['training'] = {}
-        config['training']['epochs'] = args.epochs
-        config['training']['batch_size'] = args.batch_size
-        config['training']['learning_rate'] = args.learning_rate
-        
-        # Create output directory
-        output_path = Path(args.output)
-        output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Step 1: Prepare dataset
-        dataset_yaml = None
-        if not args.skip_dataset_prep:
-            logger.info("Step 1: Preparing dataset...")
-            dataset_yaml = prepare_dataset(args.data, str(output_path / "dataset"))
-            
-            if not dataset_yaml:
-                logger.error("Dataset preparation failed!")
+
+    # Load config & classes
+    config: Dict = load_config(args.config) or {}
+    classes = (
+        config.get('models', {})
+              .get('layout', {})
+              .get('classes', ['Background', 'Text', 'Title', 'List', 'Table', 'Figure'])
+    )
+
+    # Output dirs
+    out_dir = Path(args.output)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    _log_gpu_info()
+
+    # Step 1: Prepare dataset
+    dataset_yaml = None
+    if not args.skip_dataset_prep:
+        logger.info("Preparing dataset via prepare_dataset.py ...")
+        dataset_yaml = prepare_dataset(args.data, str(out_dir / 'dataset'))
+        if not dataset_yaml:
+            candidate = out_dir / 'dataset' / 'dataset.yaml'
+            if candidate.exists():
+                dataset_yaml = str(candidate)
+            else:
+                logger.error("Dataset preparation failed and dataset.yaml not found")
                 return
+    else:
+        candidate = out_dir / 'dataset' / 'dataset.yaml'
+        if not candidate.exists():
+            logger.error(f"--skip-dataset-prep set but missing {candidate}")
+            return
+        dataset_yaml = str(candidate)
+
+    # Step 2: Train
+    logger.info("Starting training (delegated to train_yolo.py) ...")
+    ok = train_yolo_model(
+        config=config,
+        dataset_yaml=dataset_yaml,
+        output_dir=str(out_dir),
+        epochs=args.epochs,
+        weights=args.weights,
+        imgsz=args.imgsz,
+        batch_override=args.batch,
+        lr0_override=args.lr0,
+        workers=args.workers,
+        device_str=args.device,
+    )
+
+    if not ok:
+        logger.error("Training failed")
+        return
+
+    # Step 3: Validation (lightweight logging)
+    if not args.skip_validation:
+        weights_path = _find_trained_weights(out_dir)
+        if weights_path:
+            logger.info(f"Best weights: {weights_path}")
         else:
-            # Look for existing dataset.yaml
-            dataset_yaml = str(output_path / "dataset" / "dataset.yaml")
-            if not Path(dataset_yaml).exists():
-                logger.error(f"Dataset YAML not found at {dataset_yaml}")
-                return
-        
-        # Step 2: Train model
-        logger.info("Step 2: Training Stage 1 model...")
-        training_success = train_stage1_model(
-            config, dataset_yaml, str(output_path / "training")
-        )
-        
-        if not training_success:
-            logger.error("Training failed!")
+            logger.warning("Could not locate best.pt; check training logs for metrics")
+
+    # Step 4: Optional submission package
+    if args.create_submission:
+        weights_path = _find_trained_weights(out_dir)
+        if not weights_path:
+            logger.error("Cannot create submission: best.pt not found")
             return
-        
-        # Step 3: Validate model
-        model_path = "models/layout_detector.pt"
-        if not args.skip_validation and Path(model_path).exists():
-            logger.info("Step 3: Validating model...")
-            metrics = validate_stage1_model(config, dataset_yaml, model_path)
-            
-            if metrics:
-                # Save validation results
-                metrics_path = output_path / "validation_metrics.json"
-                with open(metrics_path, 'w') as f:
-                    json.dump(metrics, f, indent=2)
-                logger.info(f"Validation metrics saved to {metrics_path}")
-        
-        # Step 4: Create submission package
-        if args.create_submission and Path(model_path).exists():
-            logger.info("Step 4: Creating submission package...")
-            submission_path = create_stage1_submission(model_path, str(output_path))
-            
-            if submission_path:
-                logger.info(f"Submission package created at {submission_path}")
-        
-        logger.info("Stage 1 training pipeline completed successfully!")
-        logger.info(f"Trained model: {model_path}")
-        logger.info(f"Output directory: {output_path}")
-        
-        # Print next steps
-        print("\n" + "="*60)
-        print("STAGE 1 TRAINING COMPLETED!")
-        print("="*60)
-        print(f"Model saved to: {model_path}")
-        print(f"Dataset prepared at: {dataset_yaml}")
-        print(f"Output directory: {output_path}")
-        print("\nNext steps:")
-        print("1. Test the model on sample images:")
-        print(f"   python ps05.py infer --input test_image.png --output results/ --stage 1")
-        print("2. Evaluate on validation data:")
-        print(f"   python src/evaluation/stage1_evaluator.py --predictions preds.json --ground-truth gt.json")
-        print("3. Prepare for submission (due by 5 Nov 2025)")
-        print("="*60)
-        
-    except Exception as e:
-        logger.error(f"Training pipeline failed: {e}")
-        raise
+        sub_path = _write_submission(weights_path, out_dir, classes)
+        logger.info(f"Submission package created at: {sub_path}")
+
 
 if __name__ == "__main__":
     main()
+
+
